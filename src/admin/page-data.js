@@ -97,7 +97,9 @@ const customSidebarPages = sidebarPages.filter(
 		page.id !== 'mening-profilim' &&
 		page.id !== 'xarid-uchun-ariza' &&
 		page.id !== 'arizalarni-tasdiqlash' &&
-		page.id !== 'buyurtma-qilish',
+		page.id !== 'buyurtma-qilish' &&
+		page.id !== 'buyurtmani-jonatish' &&
+		page.id !== 'omborlar',
 )
 
 export { customSidebarPages, pageMap, sidebarPages }

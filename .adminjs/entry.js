@@ -23,3 +23,9 @@ import ZaxiraPurchaseRequestShow from '../src/admin/components/PurchaseRequestSh
 AdminJS.UserComponents.ZaxiraPurchaseRequestShow = ZaxiraPurchaseRequestShow
 import ZaxiraPurchaseOrderWorkspace from '../src/admin/components/PurchaseOrderWorkspace'
 AdminJS.UserComponents.ZaxiraPurchaseOrderWorkspace = ZaxiraPurchaseOrderWorkspace
+import ZaxiraPurchaseDispatchWorkspace from '../src/admin/components/PurchaseDispatchWorkspace'
+AdminJS.UserComponents.ZaxiraPurchaseDispatchWorkspace = ZaxiraPurchaseDispatchWorkspace
+import ZaxiraPurchaseReceiveWorkspace from '../src/admin/components/PurchaseReceiveWorkspace'
+AdminJS.UserComponents.ZaxiraPurchaseReceiveWorkspace = ZaxiraPurchaseReceiveWorkspace
+import ZaxiraWarehouseOverview from '../src/admin/components/WarehouseOverview'
+AdminJS.UserComponents.ZaxiraWarehouseOverview = ZaxiraWarehouseOverview

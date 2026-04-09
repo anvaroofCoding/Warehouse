@@ -38,6 +38,15 @@ const purchaseRequestShowPath = fileURLToPath(
 const purchaseOrderWorkspacePath = fileURLToPath(
 	new URL('./components/PurchaseOrderWorkspace.jsx', import.meta.url),
 )
+const purchaseDispatchWorkspacePath = fileURLToPath(
+	new URL('./components/PurchaseDispatchWorkspace.jsx', import.meta.url),
+)
+const purchaseReceiveWorkspacePath = fileURLToPath(
+	new URL('./components/PurchaseReceiveWorkspace.jsx', import.meta.url),
+)
+const warehouseOverviewPath = fileURLToPath(
+	new URL('./components/WarehouseOverview.jsx', import.meta.url),
+)
 
 componentLoader.override('Login', loginPath)
 componentLoader.override('SidebarBranding', sidebarBrandingPath)
@@ -76,6 +85,18 @@ const Components = {
 	PurchaseOrderWorkspace: componentLoader.add(
 		'ZaxiraPurchaseOrderWorkspace',
 		purchaseOrderWorkspacePath,
+	),
+	PurchaseDispatchWorkspace: componentLoader.add(
+		'ZaxiraPurchaseDispatchWorkspace',
+		purchaseDispatchWorkspacePath,
+	),
+	PurchaseReceiveWorkspace: componentLoader.add(
+		'ZaxiraPurchaseReceiveWorkspace',
+		purchaseReceiveWorkspacePath,
+	),
+	WarehouseOverview: componentLoader.add(
+		'ZaxiraWarehouseOverview',
+		warehouseOverviewPath,
 	),
 }
 

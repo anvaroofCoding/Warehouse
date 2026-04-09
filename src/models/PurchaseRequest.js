@@ -149,6 +149,16 @@ const purchaseRequestSchema = new mongoose.Schema(
 			default: '',
 			trim: true,
 		},
+		warehouseDispatchData: {
+			type: String,
+			required: true,
+			default: '{}',
+		},
+		warehouseDispatchSummary: {
+			type: String,
+			default: '',
+			trim: true,
+		},
 		createdBy: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: 'User',
@@ -191,6 +201,10 @@ purchaseRequestSchema.pre('validate', function setDefaultStatus() {
 
 	if (!this.buyerOrderData) {
 		this.buyerOrderData = '{}'
+	}
+
+	if (!this.warehouseDispatchData) {
+		this.warehouseDispatchData = '{}'
 	}
 })
 

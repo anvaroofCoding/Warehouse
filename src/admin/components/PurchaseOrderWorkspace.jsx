@@ -4,6 +4,7 @@ import {
 	H2,
 	Label,
 	MessageBox,
+	Pagination,
 	Text,
 } from '@adminjs/design-system'
 import { ApiClient, useCurrentAdmin, useNotice } from 'adminjs'
@@ -47,6 +48,29 @@ const newBadgeStyle = {
 	fontWeight: 700,
 }
 
+const queueTypeBadgeStyle = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '6px',
+	padding: '4px 9px',
+	borderRadius: '999px',
+	fontSize: '11px',
+	fontWeight: 700,
+	border: '1px solid transparent',
+	whiteSpace: 'nowrap',
+	lineHeight: 1,
+}
+
+const statusDotStyle = color => ({
+	width: '7px',
+	height: '7px',
+	borderRadius: '999px',
+	background: color,
+	flexShrink: 0,
+})
+
+const PAGE_SIZE = 20
+
 const tableWrapStyle = {
 	overflowX: 'auto',
 	border: '1px solid #e5e7eb',
@@ -77,6 +101,11 @@ const tableCellStyle = {
 	color: '#0f172a',
 	borderBottom: '1px solid #eef2f7',
 	verticalAlign: 'top',
+}
+
+const rowInteractiveStyle = {
+	cursor: 'pointer',
+	transition: 'background 0.15s ease',
 }
 
 const detailGridStyle = {
@@ -198,6 +227,8 @@ const PurchaseOrderWorkspace = () => {
 	const [supplierName, setSupplierName] = useState('')
 	const [documents, setDocuments] = useState([createDocumentRow()])
 	const [showCreateForm, setShowCreateForm] = useState(false)
+	const [currentPage, setCurrentPage] = useState(1)
+	const [searchText, setSearchText] = useState('')
 
 	const canView = ['admin', 'monitoring', 'sotib_oluvchi'].includes(
 		currentAdmin?.role,
@@ -258,10 +289,13 @@ const PurchaseOrderWorkspace = () => {
 			return
 		}
 
-		setSelectedRequestId(record.id)
-		applyRecord(record)
-		setShowCreateForm(true)
 		await markRecordSeen(record.id)
+
+		if (typeof window !== 'undefined') {
+			window.location.assign(
+				`/admin/resources/PurchaseOrderWorkspace?recordId=${record.id}`,
+			)
+		}
 	}
 
 	const applyRecord = record => {
@@ -314,7 +348,10 @@ const PurchaseOrderWorkspace = () => {
 				preferredRequestId &&
 				queueRecords.some(record => record.id === preferredRequestId)
 					? preferredRequestId
-					: nextRecords[0]?.id || nextOrderedRecords[0]?.id || ''
+					: selectedRequestId &&
+						  queueRecords.some(record => record.id === selectedRequestId)
+						? selectedRequestId
+						: ''
 
 			setAvailableUnits(nextUnits)
 			setRecords(nextRecords)
@@ -362,16 +399,77 @@ const PurchaseOrderWorkspace = () => {
 		loadWorkspace(initialRequestId)
 	}, [])
 
-	const allQueueRecords = useMemo(
-		() => [...records, ...orderedRecords],
-		[records, orderedRecords],
-	)
+	const combinedRecords = useMemo(() => {
+		const recordMap = new Map()
+
+		;[...records, ...orderedRecords].forEach(record => {
+			if (record?.id) {
+				recordMap.set(record.id, record)
+			}
+		})
+
+		const getTimestamp = record => {
+			const value =
+				record?.buyerOrderData?.notificationUpdatedAt ||
+				record?.buyerOrderData?.savedAt ||
+				record?.updatedAt ||
+				record?.createdAt ||
+				0
+			const parsed = new Date(value).getTime()
+			return Number.isNaN(parsed) ? 0 : parsed
+		}
+
+		return Array.from(recordMap.values()).sort(
+			(left, right) => getTimestamp(right) - getTimestamp(left),
+		)
+	}, [records, orderedRecords])
+
+	const filteredRecords = useMemo(() => {
+		const query = String(searchText || '')
+			.trim()
+			.toLowerCase()
+
+		if (!query) {
+			return combinedRecords
+		}
+
+		return combinedRecords.filter(record => {
+			const itemText = (record?.items || [])
+				.map(item => `${item?.productName || ''} ${item?.features || ''}`)
+				.join(' ')
+			const searchableText = [
+				record?.requestNumber,
+				record?.status,
+				record?.selectedUserNames,
+				record?.buyerOrderData?.supplierName,
+				itemText,
+			]
+				.join(' ')
+				.toLowerCase()
+
+			return searchableText.includes(query)
+		})
+	}, [combinedRecords, searchText])
+
+	const allQueueRecords = useMemo(() => combinedRecords, [combinedRecords])
 
 	const selectedRecord = useMemo(
 		() =>
 			allQueueRecords.find(record => record.id === selectedRequestId) || null,
 		[allQueueRecords, selectedRequestId],
 	)
+	const selectedRecordIsDispatched = Boolean(
+		String(selectedRecord?.warehouseDispatchData?.dispatchedAt || '').trim(),
+	)
+	const canEditSelectedRecord = canEdit && !selectedRecordIsDispatched
+
+	useEffect(() => {
+		const totalPages = Math.max(
+			1,
+			Math.ceil(filteredRecords.length / PAGE_SIZE),
+		)
+		setCurrentPage(current => Math.min(current, totalPages))
+	}, [filteredRecords.length])
 
 	const updateItem = (index, field, value) => {
 		setItems(currentItems =>
@@ -423,9 +521,17 @@ const PurchaseOrderWorkspace = () => {
 
 	const handleCloseNewOrder = () => {
 		setShowCreateForm(false)
+		setSelectedRequestId('')
+		if (typeof window !== 'undefined') {
+			window.location.assign('/admin/resources/PurchaseOrderWorkspace')
+		}
 	}
 
 	const handleFileChange = async (index, event) => {
+		if (!canEditSelectedRecord) {
+			return
+		}
+
 		const file = event.target.files?.[0]
 
 		if (!file) {
@@ -455,10 +561,17 @@ const PurchaseOrderWorkspace = () => {
 	}
 
 	const addDocumentRow = () => {
+		if (!canEditSelectedRecord) {
+			return
+		}
+
 		setDocuments(currentDocuments => [...currentDocuments, createDocumentRow()])
 	}
 
 	const removeDocumentRow = index => {
+		if (!canEditSelectedRecord) {
+			return
+		}
 		setDocuments(currentDocuments => {
 			const nextDocuments = currentDocuments.filter(
 				(_, currentIndex) => currentIndex !== index,
@@ -468,7 +581,14 @@ const PurchaseOrderWorkspace = () => {
 	}
 
 	const saveOrder = async () => {
-		if (!canEdit) {
+		if (!canEditSelectedRecord) {
+			if (selectedRecordIsDispatched) {
+				addNotice({
+					message:
+						'Bu buyurtma omborga jo‘natilgan. Endi bu yerda faqat ko‘rish mumkin.',
+					type: 'info',
+				})
+			}
 			return
 		}
 
@@ -540,90 +660,125 @@ const PurchaseOrderWorkspace = () => {
 		}
 	}
 
-	const renderQueueTable = ({ rows, emptyText, actionLabel }) => {
+	const renderQueueTable = ({ rows, emptyText }) => {
 		if (!rows.length) {
 			return <Text color='grey60'>{emptyText}</Text>
 		}
 
-		return (
-			<Box style={tableWrapStyle}>
-				<table style={tableStyle}>
-					<thead>
-						<tr>
-							<th style={tableHeadCellStyle}>#</th>
-							<th style={tableHeadCellStyle}>Holat</th>
-							<th style={tableHeadCellStyle}>Ariza</th>
-							<th style={tableHeadCellStyle}>Tuzilmalar</th>
-							<th style={tableHeadCellStyle}>Tovar / manba</th>
-							<th style={tableHeadCellStyle}>Sana</th>
-							<th style={tableHeadCellStyle}>Amal</th>
-						</tr>
-					</thead>
-					<tbody>
-						{rows.map((record, index) => {
-							const rowDate =
-								record?.buyerOrderData?.notificationUpdatedAt ||
-								record?.buyerOrderData?.savedAt ||
-								record?.updatedAt ||
-								record?.createdAt
+		const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+		const safePage = Math.min(currentPage, totalPages)
+		const startIndex = (safePage - 1) * PAGE_SIZE
+		const paginatedRows = rows.slice(startIndex, startIndex + PAGE_SIZE)
 
-							return (
-								<tr
-									key={record.id}
-									style={
-										selectedRequestId === record.id
-											? { background: '#f8fbff' }
-											: undefined
-									}
-								>
-									<td style={tableCellStyle}>{index + 1}</td>
-									<td style={tableCellStyle}>
-										{record?.buyerOrderData?.isNew ? (
-											<Box as='span' style={newBadgeStyle}>
-												Yangi
+		return (
+			<Box>
+				<Box style={tableWrapStyle}>
+					<table style={tableStyle}>
+						<thead>
+							<tr>
+								<th style={tableHeadCellStyle}>#</th>
+								<th style={tableHeadCellStyle}>Status</th>
+								<th style={tableHeadCellStyle}>Ariza</th>
+								<th style={tableHeadCellStyle}>Tuzilmalar</th>
+								<th style={tableHeadCellStyle}>Tovar / manba</th>
+								<th style={tableHeadCellStyle}>Sana</th>
+							</tr>
+						</thead>
+						<tbody>
+							{paginatedRows.map((record, index) => {
+								const rowDate =
+									record?.buyerOrderData?.notificationUpdatedAt ||
+									record?.buyerOrderData?.savedAt ||
+									record?.updatedAt ||
+									record?.createdAt
+								const hasSavedOrder = Boolean(
+									record?.buyerOrderData?.savedAt ||
+									record?.buyerOrderData?.supplierName ||
+									(Array.isArray(record?.buyerOrderData?.items) &&
+										record.buyerOrderData.items.length),
+								)
+								const typeMeta = hasSavedOrder
+									? {
+											label: 'Qilingan',
+											dotColor: '#0057d9',
+											style: {
+												...queueTypeBadgeStyle,
+												background: '#eff6ff',
+												color: '#0057d9',
+												borderColor: '#b7d3ff',
+											},
+										}
+									: {
+											label: 'Qilinmagan',
+											dotColor: '#dc2626',
+											style: {
+												...queueTypeBadgeStyle,
+												background: '#fef2f2',
+												color: '#dc2626',
+												borderColor: '#fecaca',
+											},
+										}
+
+								return (
+									<tr
+										key={record.id}
+										onClick={() => void openRequest(record)}
+										style={
+											selectedRequestId === record.id
+												? { ...rowInteractiveStyle, background: '#f8fbff' }
+												: rowInteractiveStyle
+										}
+									>
+										<td style={tableCellStyle}>{startIndex + index + 1}</td>
+										<td style={tableCellStyle}>
+											<Box display='flex' flexDirection='column' gap='xs'>
+												<Box as='span' style={typeMeta.style}>
+													<span style={statusDotStyle(typeMeta.dotColor)} />
+													<span>{typeMeta.label}</span>
+												</Box>
+												{record?.buyerOrderData?.isNew ? (
+													<Box as='span' style={newBadgeStyle}>
+														Yangi
+													</Box>
+												) : null}
 											</Box>
-										) : (
-											<Text color='grey60'>Ko‘rilgan</Text>
-										)}
-									</td>
-									<td style={tableCellStyle}>
-										<Text fontWeight='bold'>
-											{record.requestNumber || record.id}
-										</Text>
-										<Text mt='xs' color='grey60'>
-											{record.status || '—'}
-										</Text>
-									</td>
-									<td style={tableCellStyle}>
-										{record.selectedUserNames || '—'}
-									</td>
-									<td style={tableCellStyle}>
-										<Text>
-											{record?.buyerOrderData?.supplierName
-												? `Manba: ${record.buyerOrderData.supplierName}`
-												: `${record?.items?.length || 0} ta tovar`}
-										</Text>
-									</td>
-									<td style={tableCellStyle}>{formatDate(rowDate)}</td>
-									<td style={tableCellStyle}>
-										<Button
-											type='button'
-											size='sm'
-											variant={
-												selectedRequestId === record.id
-													? 'contained'
-													: 'outlined'
-											}
-											onClick={() => openRequest(record)}
-										>
-											{selectedRequestId === record.id ? 'Ochiq' : actionLabel}
-										</Button>
-									</td>
-								</tr>
-							)
-						})}
-					</tbody>
-				</table>
+										</td>
+										<td style={tableCellStyle}>
+											<Text fontWeight='bold'>
+												{record.requestNumber || record.id}
+											</Text>
+											<Text mt='xs' color='grey60'>
+												{record.status || '—'}
+											</Text>
+										</td>
+										<td style={tableCellStyle}>
+											{record.selectedUserNames || '—'}
+										</td>
+										<td style={tableCellStyle}>
+											<Text>
+												{record?.buyerOrderData?.supplierName
+													? `Manba: ${record.buyerOrderData.supplierName}`
+													: `${record?.items?.length || 0} ta tovar`}
+											</Text>
+										</td>
+										<td style={tableCellStyle}>{formatDate(rowDate)}</td>
+									</tr>
+								)
+							})}
+						</tbody>
+					</table>
+				</Box>
+
+				{totalPages > 1 ? (
+					<Text mt='xl' textAlign='center'>
+						<Pagination
+							page={safePage}
+							perPage={PAGE_SIZE}
+							total={rows.length}
+							onChange={page => setCurrentPage(page)}
+						/>
+					</Text>
+				) : null}
 			</Box>
 		)
 	}
@@ -648,43 +803,90 @@ const PurchaseOrderWorkspace = () => {
 					Zaxira.uz
 				</Text>
 				<H2>Buyurtma qilish</H2>
+				<Text mt='sm' color='grey60'>
+					Jadval qatorini bossangiz, tanlangan ariza uchun buyurtma ish oynasi
+					ochiladi. Buyurtma saqlangandan keyin uni alohida{' '}
+					<strong>Buyurtmani jo‘natish</strong> sahifasidan omborga yuborasiz.
+				</Text>
+				<Box
+					style={{
+						display: 'flex',
+						flexWrap: 'wrap',
+						gap: '16px 18px',
+						marginTop: '16px',
+						marginBottom: '20px',
+					}}
+				>
+					<Button
+						as='a'
+						href='/admin/resources/PurchaseDispatchWorkspace'
+						variant='outlined'
+						style={{ minWidth: '170px', justifyContent: 'center' }}
+					>
+						Buyurtmani jo‘natish
+					</Button>
+					<Button
+						as='a'
+						href='/admin/resources/WarehouseOverview'
+						variant='outlined'
+						style={{ minWidth: '170px', justifyContent: 'center' }}
+					>
+						Omborlar
+					</Button>
+				</Box>
 
 				{loading ? (
 					<Text>Ma’lumotlar yuklanmoqda...</Text>
 				) : (
 					<Box style={{ display: 'grid', gap: '16px' }}>
-						<Box style={cardStyle}>
-							<Box
-								display='flex'
-								justifyContent='space-between'
-								alignItems='center'
-								gap='default'
-								flexWrap='wrap'
-							>
-								<Box>
-									<Text fontWeight='bold'>Yangi va navbatdagi arizalar</Text>
-									<Text mt='xs' color='grey60'>
-										{records.length
-											? `Jadvalda ${records.length} ta yangi yoki ko‘rilayotgan ariza bor.`
-											: 'Hozircha yangi buyurtma uchun ariza yo‘q.'}
-									</Text>
+						{showCreateForm ? null : (
+							<Box style={cardStyle}>
+								<Box
+									display='flex'
+									justifyContent='space-between'
+									alignItems='center'
+									gap='default'
+									flexWrap='wrap'
+								>
+									<Box>
+										<Text fontWeight='bold'>Barcha buyurtmalar</Text>
+										<Text mt='xs' color='grey60'>
+											{searchText.trim()
+												? `Filter natijasida ${filteredRecords.length} ta buyurtma topildi.`
+												: combinedRecords.length
+													? `Yangi, navbatdagi va saqlangan buyurtmalar bir jadvalda ${filteredRecords.length} ta holatda ko‘rinmoqda.`
+													: 'Hozircha buyurtma va arizalar yo‘q.'}
+										</Text>
+									</Box>
+
+									{combinedRecords.length ? (
+										<Text color='grey60'>
+											Qizil — buyurtma qilinmagan, ko‘k — buyurtma qilingan
+										</Text>
+									) : null}
 								</Box>
 
-								{records.length && canEdit ? (
-									<Button type='button' size='sm' onClick={handleStartNewOrder}>
-										Birinchi yangi arizani ochish
-									</Button>
-								) : null}
-							</Box>
+								<input
+									type='text'
+									value={searchText}
+									onChange={event => {
+										setSearchText(event.target.value)
+										setCurrentPage(1)
+									}}
+									placeholder='Ariza, tuzilma, manba yoki tovar nomi bo‘yicha filter'
+									style={{ ...inputStyle, marginTop: '16px' }}
+								/>
 
-							<Box mt='lg'>
-								{renderQueueTable({
-									rows: records,
-									emptyText: 'Yangi arizalar topilmadi.',
-									actionLabel: canEdit ? 'Batafsil' : 'Ko‘rish',
-								})}
+								<Box mt='lg'>
+									{renderQueueTable({
+										rows: filteredRecords,
+										emptyText: searchText.trim()
+											? 'Filter bo‘yicha buyurtma topilmadi.'
+											: 'Buyurtmalar hali yo‘q.',
+									})}
+								</Box>
 							</Box>
-						</Box>
+						)}
 
 						{showCreateForm ? (
 							<Box style={{ display: 'grid', gap: '16px' }}>
@@ -716,7 +918,7 @@ const PurchaseOrderWorkspace = () => {
 												size='sm'
 												onClick={handleCloseNewOrder}
 											>
-												Detailni yopish
+												Ro‘yxatga qaytish
 											</Button>
 										</Box>
 									</Box>
@@ -758,6 +960,23 @@ const PurchaseOrderWorkspace = () => {
 											</Box>
 										</Box>
 
+										{selectedRecordIsDispatched ? (
+											<MessageBox variant='info'>
+												<Text>
+													Bu buyurtma{' '}
+													<strong>
+														{selectedRecord?.warehouseDispatchData
+															?.warehouseName || 'ombor'}
+													</strong>{' '}
+													ga{' '}
+													{formatDate(
+														selectedRecord?.warehouseDispatchData?.dispatchedAt,
+													)}
+													da jo‘natilgan. Bu yerda endi faqat ko‘rish mumkin.
+												</Text>
+											</MessageBox>
+										) : null}
+
 										<Box style={cardStyle}>
 											<Text fontWeight='bold' mb='lg'>
 												Tovar haqida ma’lumotlar
@@ -789,7 +1008,7 @@ const PurchaseOrderWorkspace = () => {
 																	)
 																}
 																style={inputStyle}
-																disabled={!canEdit}
+																disabled={!canEditSelectedRecord}
 																placeholder='Tovar nomi'
 															/>
 
@@ -803,7 +1022,7 @@ const PurchaseOrderWorkspace = () => {
 																	)
 																}
 																style={textAreaStyle}
-																disabled={!canEdit}
+																disabled={!canEditSelectedRecord}
 																placeholder='Xususiyatlari'
 															/>
 
@@ -825,7 +1044,7 @@ const PurchaseOrderWorkspace = () => {
 																		)
 																	}
 																	style={inputStyle}
-																	disabled={!canEdit}
+																	disabled={!canEditSelectedRecord}
 																>
 																	{availableUnits.map(unit => (
 																		<option key={unit} value={unit}>
@@ -846,7 +1065,7 @@ const PurchaseOrderWorkspace = () => {
 																		)
 																	}
 																	style={inputStyle}
-																	disabled={!canEdit}
+																	disabled={!canEditSelectedRecord}
 																	placeholder='Soni'
 																/>
 															</Box>
@@ -863,7 +1082,7 @@ const PurchaseOrderWorkspace = () => {
 												value={supplierName}
 												onChange={event => setSupplierName(event.target.value)}
 												style={{ ...inputStyle, marginTop: '8px' }}
-												disabled={!canEdit}
+												disabled={!canEditSelectedRecord}
 												placeholder='Masalan: Artel servis, Texnomart, mahalliy bozordan'
 											/>
 										</Box>
@@ -894,7 +1113,7 @@ const PurchaseOrderWorkspace = () => {
 																)
 															}
 															style={inputStyle}
-															disabled={!canEdit}
+															disabled={!canEditSelectedRecord}
 															placeholder='Hujjat nomi'
 														/>
 
@@ -902,7 +1121,7 @@ const PurchaseOrderWorkspace = () => {
 															type='file'
 															onChange={event => handleFileChange(index, event)}
 															style={{ marginTop: '10px', maxWidth: '100%' }}
-															disabled={!canEdit}
+															disabled={!canEditSelectedRecord}
 														/>
 
 														{document.fileName ? (
@@ -950,6 +1169,7 @@ const PurchaseOrderWorkspace = () => {
 														type='button'
 														variant='outlined'
 														onClick={addDocumentRow}
+														disabled={!canEditSelectedRecord}
 													>
 														+ Hujjat qo‘shish
 													</Button>
@@ -962,9 +1182,13 @@ const PurchaseOrderWorkspace = () => {
 												<Button
 													type='button'
 													onClick={saveOrder}
-													disabled={saving}
+													disabled={saving || !canEditSelectedRecord}
 												>
-													{saving ? 'Saqlanmoqda...' : 'Saqlash'}
+													{selectedRecordIsDispatched
+														? 'Omborga jo‘natilgan'
+														: saving
+															? 'Saqlanmoqda...'
+															: 'Saqlash'}
 												</Button>
 											</Box>
 										) : null}
@@ -976,24 +1200,6 @@ const PurchaseOrderWorkspace = () => {
 								)}
 							</Box>
 						) : null}
-
-						<Box style={cardStyle}>
-							<Text fontWeight='bold' mb='sm'>
-								Saqlangan buyurtmalar
-							</Text>
-							<Text color='grey60'>
-								Yuborilgan yoki oldin saqlangan buyurtmalar alohida jadvalda
-								ko‘rsatiladi.
-							</Text>
-
-							<Box mt='lg'>
-								{renderQueueTable({
-									rows: orderedRecords,
-									emptyText: 'Saqlangan buyurtmalar hali yo‘q.',
-									actionLabel: 'Batafsil',
-								})}
-							</Box>
-						</Box>
 					</Box>
 				)}
 			</Box>

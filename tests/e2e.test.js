@@ -79,6 +79,8 @@ let autoMonitoringUsername = ''
 let secondaryMonitoringUsername = ''
 let autoTuzilmaUsername = ''
 let autoBuyerUsername = ''
+let buyerDispatchProductName = ''
+let buyerDispatchFeatures = ''
 
 before(async () => {
 	const adminLogin = await login('admin', 'Admin123!')
@@ -91,6 +93,8 @@ before(async () => {
 	secondaryMonitoringUsername = `automon2_${stamp}`
 	autoTuzilmaUsername = `autotuz_${stamp}`
 	autoBuyerUsername = `autobuyer_${stamp}`
+	buyerDispatchProductName = `Buyer uchun yangi tovar ${stamp}`
+	buyerDispatchFeatures = `Test konfiguratsiyasi ${stamp}`
 
 	const createMonitoring = await apiPost(
 		'/admin/api/resources/User/actions/new',
@@ -472,7 +476,12 @@ describe('Sotib olish oqimi', () => {
 				approver: monitoringUserId,
 				comment: 'Buyer navbati uchun test ariza',
 				items: JSON.stringify([
-					{ productName: 'Buyer uchun yangi tovar', unit: 'dona', quantity: 3 },
+					{
+						productName: buyerDispatchProductName,
+						features: buyerDispatchFeatures,
+						unit: 'dona',
+						quantity: 3,
+					},
 				]),
 			},
 			adminCookie,
@@ -561,6 +570,179 @@ describe('Sotib olish oqimi', () => {
 		)
 		assert.equal(status, 200)
 		assert.equal(body?.redirectUrl, '/admin/resources/PurchaseOrderWorkspace')
+	})
+
+	test("23 — Buyurtmani jo'natish sahifasi tayyor buyurtmalar va omborlarni qaytaradi", async () => {
+		const saveOrderRes = await apiPost(
+			'/admin/api/resources/PurchaseBuyerQueue/actions/buyerWorkspace',
+			{
+				requestId: buyerReadyRequestId,
+				supplierName: 'Texnomart',
+				items: [
+					{
+						productName: buyerDispatchProductName,
+						features: buyerDispatchFeatures,
+						unit: 'dona',
+						quantity: 3,
+					},
+				],
+				documents: [],
+			},
+			buyerCookie,
+		)
+		assert.equal(saveOrderRes.status, 200)
+		assert.equal(saveOrderRes.body?.notice?.type, 'success')
+
+		const { status, body } = await apiGet(
+			'/admin/api/resources/PurchaseDispatchWorkspace/actions/dispatchWorkspace',
+			buyerCookie,
+		)
+		assert.equal(status, 200)
+		assert.equal(body?.canEdit, true)
+		assert.ok(Array.isArray(body?.records))
+		assert.ok(body.records.some(record => record.id === buyerReadyRequestId))
+		assert.ok(Array.isArray(body?.warehouses))
+		assert.ok(body.warehouses.length > 0)
+		assert.ok(
+			body.warehouses.some(warehouse => warehouse.name === 'Auto Tuzilma Test'),
+			'Omborlar ro‘yxati tarkibiy tuzilma nomlaridan shakllanishi kerak',
+		)
+	})
+
+	test("24 — Buyurtmani jo'natish detail actioni to'g'ri sahifaga yo'naltiradi", async () => {
+		const { status, body } = await apiGet(
+			`/admin/api/resources/PurchaseBuyerQueue/records/${buyerReadyRequestId}/openDispatchPage`,
+			buyerCookie,
+		)
+		assert.equal(status, 200)
+		assert.equal(
+			body?.redirectUrl,
+			`/admin/resources/PurchaseDispatchWorkspace?recordId=${buyerReadyRequestId}`,
+		)
+	})
+
+	test("25 — Jo'natilgan buyurtma tuzilma qabul sahifasiga tushadi va omborga hali qo'shilmaydi", async () => {
+		const dispatchWorkspaceRes = await apiGet(
+			'/admin/api/resources/PurchaseDispatchWorkspace/actions/dispatchWorkspace',
+			buyerCookie,
+		)
+		assert.equal(dispatchWorkspaceRes.status, 200)
+
+		const warehouseId =
+			dispatchWorkspaceRes.body?.warehouses?.find(
+				warehouse => warehouse.name === 'Auto Tuzilma Test',
+			)?.id ||
+			dispatchWorkspaceRes.body?.warehouses?.[0]?.id ||
+			''
+		assert.ok(warehouseId)
+
+		const dispatchRes = await apiPost(
+			'/admin/api/resources/PurchaseDispatchWorkspace/actions/dispatchWorkspace',
+			{
+				requestId: buyerReadyRequestId,
+				warehouseId,
+			},
+			buyerCookie,
+		)
+		assert.equal(dispatchRes.status, 200)
+		assert.equal(dispatchRes.body?.notice?.type, 'success')
+
+		const receiveWorkspaceRes = await apiGet(
+			'/admin/api/resources/PurchaseReceiveWorkspace/actions/receiveWorkspace',
+			tuzilmaCookie,
+		)
+		assert.equal(receiveWorkspaceRes.status, 200)
+		assert.equal(receiveWorkspaceRes.body?.canEdit, true)
+		assert.ok(Array.isArray(receiveWorkspaceRes.body?.records))
+		assert.ok(
+			receiveWorkspaceRes.body.records.some(
+				record => record.id === buyerReadyRequestId,
+			),
+		)
+
+		const beforeReceiveWarehouseRes = await apiGet(
+			'/admin/api/resources/WarehouseOverview/actions/warehouseOverview',
+			tuzilmaCookie,
+		)
+		assert.equal(beforeReceiveWarehouseRes.status, 200)
+		const beforeReceiveWarehouse =
+			beforeReceiveWarehouseRes.body?.warehouses?.[0]
+		assert.ok(beforeReceiveWarehouse)
+		assert.ok(
+			!beforeReceiveWarehouse.items?.some(
+				item => item.productName === buyerDispatchProductName,
+			),
+		)
+	})
+
+	test("26 — Tuzilma buyurtmani qabul qilgach tovar ombor detailida ko'rinadi", async () => {
+		const receiveRes = await apiPost(
+			'/admin/api/resources/PurchaseReceiveWorkspace/actions/receiveWorkspace',
+			{
+				requestId: buyerReadyRequestId,
+			},
+			tuzilmaCookie,
+		)
+		assert.equal(receiveRes.status, 200)
+		assert.equal(receiveRes.body?.notice?.type, 'success')
+
+		const { status, body } = await apiGet(
+			'/admin/api/resources/WarehouseOverview/actions/warehouseOverview',
+			tuzilmaCookie,
+		)
+		assert.equal(status, 200)
+		assert.ok(Array.isArray(body?.warehouses))
+		const selectedWarehouse = body.warehouses[0]
+		assert.ok(selectedWarehouse)
+		assert.ok(Array.isArray(selectedWarehouse?.items))
+		assert.ok(
+			selectedWarehouse.items.some(
+				item => item.productName === buyerDispatchProductName,
+			),
+		)
+		assert.ok(
+			selectedWarehouse.items.some(
+				item => item.features === buyerDispatchFeatures && item.quantity === 3,
+			),
+		)
+	})
+
+	test("27 — Omborga jo'natilgan buyurtma Buyurtma qilishda faqat ko'rish uchun qoladi", async () => {
+		const workspaceRes = await apiGet(
+			'/admin/api/resources/PurchaseBuyerQueue/actions/buyerWorkspace',
+			buyerCookie,
+		)
+		assert.equal(workspaceRes.status, 200)
+
+		const lockedRecord = workspaceRes.body?.orderedRecords?.find(
+			record => record.id === buyerReadyRequestId,
+		)
+		assert.ok(lockedRecord)
+		assert.ok(lockedRecord?.warehouseDispatchData?.dispatchedAt)
+
+		const saveAfterDispatchRes = await apiPost(
+			'/admin/api/resources/PurchaseBuyerQueue/actions/buyerWorkspace',
+			{
+				requestId: buyerReadyRequestId,
+				supplierName: 'Boshqa manba',
+				items: [
+					{
+						productName: buyerDispatchProductName,
+						features: 'Qayta saqlash urinishi',
+						unit: 'dona',
+						quantity: 5,
+					},
+				],
+				documents: [],
+			},
+			buyerCookie,
+		)
+
+		assert.equal(saveAfterDispatchRes.status, 200)
+		assert.equal(
+			saveAfterDispatchRes.body?.record?.errors?.requestId?.message,
+			'Bu buyurtma omborga jo‘natilgan, endi faqat ko‘rish mumkin',
+		)
 	})
 })
 

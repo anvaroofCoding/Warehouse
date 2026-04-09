@@ -15,6 +15,9 @@ const uzTranslations = {
 		openOrderPage: 'Buyurtma qilish',
 		backToBuyerQueue: 'Sotib olish ro‘yxati',
 		refreshBuyerWorkspace: 'Yangilash',
+		refreshDispatchWorkspace: 'Jo‘natish sahifasini yangilash',
+		refreshReceiveWorkspace: 'Qabul sahifasini yangilash',
+		refreshWarehouseOverview: 'Omborlarni yangilash',
 		returnBuyerOrder: 'Qaytarish',
 	},
 	buttons: {
@@ -45,11 +48,16 @@ const uzTranslations = {
 		welcome: 'Xush kelibsiz',
 		loginWelcome: 'Tizimga kirish',
 		Xarid: 'Xarid',
+		Omborxona: 'Omborxona',
 		Foydalanuvchilar: 'Foydalanuvchilar',
 		PurchaseRequest: 'Xarid uchun ariza',
 		PurchaseApprovalQueue: 'Arizalarni tasdiqlash',
 		PurchaseBuyerQueue: 'Sotib olish',
 		PurchaseOrderWorkspace: 'Buyurtma qilish',
+		PurchaseDispatchWorkspace: 'Buyurtmani jo‘natish',
+		PurchaseReceiveWorkspace: 'Buyurtmani qabul qilish',
+		WarehouseOverview: 'Omborlar',
+		MyWarehouse: 'Mening omborim',
 		User: 'Foydalanuvchilar',
 	},
 	properties: {
@@ -170,6 +178,9 @@ const uzTranslations = {
 		},
 	},
 	components: {
+		TopBar: {
+			myProfile: 'Mening profilim',
+		},
 		Login: {
 			welcomeHeader: 'Zaxira.uz tizimiga xush kelibsiz',
 			welcomeMessage:
@@ -213,6 +224,9 @@ const ruTranslations = {
 		openOrderPage: 'Оформление заказа',
 		backToBuyerQueue: 'Список закупок',
 		refreshBuyerWorkspace: 'Обновить',
+		refreshDispatchWorkspace: 'Обновить страницу отправки',
+		refreshReceiveWorkspace: 'Обновить страницу приёма',
+		refreshWarehouseOverview: 'Обновить склады',
 		returnBuyerOrder: 'Вернуть',
 	},
 	buttons: {
@@ -243,11 +257,16 @@ const ruTranslations = {
 		welcome: 'Добро пожаловать',
 		loginWelcome: 'Вход в систему',
 		Xarid: 'Закупки',
+		Omborxona: 'Склад',
 		Foydalanuvchilar: 'Пользователи',
 		PurchaseRequest: 'Заявка на закупку',
 		PurchaseApprovalQueue: 'Подтверждение заявок',
 		PurchaseBuyerQueue: 'Закупка',
 		PurchaseOrderWorkspace: 'Оформление заказа',
+		PurchaseDispatchWorkspace: 'Отправка заказа',
+		PurchaseReceiveWorkspace: 'Приём заказа',
+		WarehouseOverview: 'Склады',
+		MyWarehouse: 'Мой склад',
 		User: 'Пользователи',
 	},
 	properties: {
@@ -369,6 +388,9 @@ const ruTranslations = {
 		},
 	},
 	components: {
+		TopBar: {
+			myProfile: 'Мой профиль',
+		},
 		Login: {
 			welcomeHeader: 'Добро пожаловать в Zaxira.uz',
 			welcomeMessage:

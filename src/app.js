@@ -78,6 +78,7 @@ const BUYER_VISIBLE_STATUSES = [
 ]
 const BUYER_WORKSPACE_STATUSES = ['sotib olish kerak', 'sotib olinmoqda']
 const BUYER_QUEUE_STAGES = ['yakunlandi', 'sotib_olish']
+const WAREHOUSE_ROLE = 'tuzilmalar'
 
 const getStatusOptionLabel = status => {
 	const normalized = String(status || '')
@@ -255,6 +256,53 @@ const buildActorLabel = user =>
 	[user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
 	user?.username ||
 	'Foydalanuvchi'
+
+const normalizeWarehouseIdentity = value =>
+	String(value || '')
+		.trim()
+		.toLowerCase()
+
+const buildWarehouseOption = user => ({
+	id: String(user?._id || user?.id || '').trim(),
+	name:
+		String(user?.organizationName || '').trim() || buildUserDisplayLabel(user),
+	description:
+		[user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
+		String(user?.username || '').trim() ||
+		buildUserDisplayLabel(user),
+})
+
+const loadWarehouseStructures = async () => {
+	const users = await User.find({ role: WAREHOUSE_ROLE })
+		.sort({
+			updatedAt: -1,
+			createdAt: -1,
+			organizationName: 1,
+			firstName: 1,
+			lastName: 1,
+			username: 1,
+		})
+		.lean()
+
+	const warehouseMap = new Map()
+
+	for (const user of users) {
+		const warehouse = buildWarehouseOption(user)
+		const identityKey =
+			normalizeWarehouseIdentity(warehouse.name) || warehouse.id
+
+		if (!warehouseMap.has(identityKey)) {
+			warehouseMap.set(identityKey, warehouse)
+		}
+	}
+
+	return [...warehouseMap.values()].sort((firstWarehouse, secondWarehouse) =>
+		String(firstWarehouse?.name || '').localeCompare(
+			String(secondWarehouse?.name || ''),
+			'uz',
+		),
+	)
+}
 
 const normalizePurchaseItems = value =>
 	parseJsonArray(value)
@@ -443,6 +491,7 @@ const sortBuyerWorkspaceRecords = records =>
 
 const serializeBuyerWorkspaceRecord = record => {
 	const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+	const warehouseDispatchData = getWarehouseDispatchData(record)
 
 	return {
 		id: String(record?._id || ''),
@@ -471,10 +520,218 @@ const serializeBuyerWorkspaceRecord = record => {
 			lastViewedRole: String(buyerOrderData?.lastViewedRole || '').trim(),
 			isNew: isBuyerRecordNew(buyerOrderData),
 		},
+		warehouseDispatchData: {
+			warehouseId: String(warehouseDispatchData?.warehouseId || '').trim(),
+			warehouseName: String(warehouseDispatchData?.warehouseName || '').trim(),
+			warehouseDescription: String(
+				warehouseDispatchData?.warehouseDescription || '',
+			).trim(),
+			dispatchedAt: String(warehouseDispatchData?.dispatchedAt || '').trim(),
+			dispatchedBy: String(warehouseDispatchData?.dispatchedBy || '').trim(),
+			dispatchedByRole: String(
+				warehouseDispatchData?.dispatchedByRole || '',
+			).trim(),
+			receivedAt: String(warehouseDispatchData?.receivedAt || '').trim(),
+			receivedBy: String(warehouseDispatchData?.receivedBy || '').trim(),
+			receivedByRole: String(
+				warehouseDispatchData?.receivedByRole || '',
+			).trim(),
+		},
+		warehouseDispatchSummary: String(
+			record?.warehouseDispatchSummary || '',
+		).trim(),
 		buyerOrderSummary: String(record?.buyerOrderSummary || '').trim(),
 		createdAt: record?.createdAt,
 		updatedAt: record?.updatedAt,
 	}
+}
+
+const getWarehouseOption = (warehouseId, warehouses = []) =>
+	(warehouses || []).find(
+		warehouse => warehouse.id === String(warehouseId || '').trim(),
+	) || null
+
+const getWarehouseDispatchData = record =>
+	parseJsonObject(record?.warehouseDispatchData)
+
+const hasWarehouseDispatch = record =>
+	Boolean(String(getWarehouseDispatchData(record)?.dispatchedAt || '').trim())
+
+const hasWarehouseReceipt = record =>
+	Boolean(String(getWarehouseDispatchData(record)?.receivedAt || '').trim())
+
+const matchesWarehouseReceiver = ({ record, currentAdmin }) => {
+	if (currentAdmin?.role !== WAREHOUSE_ROLE) {
+		return true
+	}
+
+	const dispatchData = getWarehouseDispatchData(record)
+	const warehouseId = String(dispatchData?.warehouseId || '').trim()
+	const warehouseName = normalizeWarehouseIdentity(dispatchData?.warehouseName)
+	const currentWarehouseId = String(currentAdmin?.id || '').trim()
+	const currentWarehouseName = normalizeWarehouseIdentity(
+		currentAdmin?.organizationName || buildUserDisplayLabel(currentAdmin),
+	)
+
+	return Boolean(
+		(warehouseId && warehouseId === currentWarehouseId) ||
+		(warehouseName &&
+			currentWarehouseName &&
+			warehouseName === currentWarehouseName),
+	)
+}
+
+const isDispatchReadyRecord = record => {
+	const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+	const dispatchData = getWarehouseDispatchData(record)
+
+	return (
+		String(record?.status || '') === 'sotib olinmoqda' &&
+		String(record?.currentStage || '') === 'sotib_olish' &&
+		String(buyerOrderData?.workflowState || '').trim() === 'submitted' &&
+		!String(dispatchData?.dispatchedAt || '').trim()
+	)
+}
+
+const getDispatchSortTime = record => {
+	const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+	const dispatchData = getWarehouseDispatchData(record)
+
+	return Math.max(
+		getDateTimestamp(dispatchData?.receivedAt),
+		getDateTimestamp(dispatchData?.dispatchedAt),
+		getDateTimestamp(buyerOrderData?.submittedAt),
+		getDateTimestamp(buyerOrderData?.savedAt),
+		getDateTimestamp(record?.updatedAt),
+		getDateTimestamp(record?.createdAt),
+		0,
+	)
+}
+
+const sortDispatchWorkspaceRecords = records =>
+	[...(records || [])].sort(
+		(firstRecord, secondRecord) =>
+			getDispatchSortTime(secondRecord) - getDispatchSortTime(firstRecord),
+	)
+
+const serializeDispatchWorkspaceRecord = record => {
+	const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+	const dispatchData = getWarehouseDispatchData(record)
+
+	return {
+		id: String(record?._id || ''),
+		requestNumber: String(record?.requestNumber || ''),
+		status: String(record?.status || ''),
+		currentStage: String(record?.currentStage || ''),
+		selectedUserNames: String(record?.selectedUserNames || '').trim(),
+		items: normalizePurchaseItems(
+			dispatchData?.itemsSnapshot || buyerOrderData?.items || record?.items,
+		),
+		buyerOrderData: {
+			supplierName: String(
+				dispatchData?.supplierName || buyerOrderData?.supplierName || '',
+			).trim(),
+			savedAt: String(buyerOrderData?.savedAt || '').trim(),
+			submittedAt: String(buyerOrderData?.submittedAt || '').trim(),
+			workflowState: String(buyerOrderData?.workflowState || '').trim(),
+		},
+		warehouseDispatchData: {
+			warehouseId: String(dispatchData?.warehouseId || '').trim(),
+			warehouseName: String(dispatchData?.warehouseName || '').trim(),
+			warehouseDescription: String(
+				dispatchData?.warehouseDescription || '',
+			).trim(),
+			dispatchedAt: String(dispatchData?.dispatchedAt || '').trim(),
+			dispatchedBy: String(dispatchData?.dispatchedBy || '').trim(),
+			dispatchedByRole: String(dispatchData?.dispatchedByRole || '').trim(),
+			receivedAt: String(dispatchData?.receivedAt || '').trim(),
+			receivedBy: String(dispatchData?.receivedBy || '').trim(),
+			receivedByRole: String(dispatchData?.receivedByRole || '').trim(),
+		},
+		warehouseDispatchSummary: String(
+			record?.warehouseDispatchSummary || '',
+		).trim(),
+		createdAt: record?.createdAt,
+		updatedAt: record?.updatedAt,
+	}
+}
+
+const buildWarehouseOverviewData = (records, warehouses = []) => {
+	const warehouseMap = new Map(
+		(warehouses || []).map(warehouse => [
+			warehouse.id,
+			{
+				...warehouse,
+				totalQuantity: 0,
+				itemCount: 0,
+				requestCount: 0,
+				updatedAt: '',
+				items: [],
+			},
+		]),
+	)
+	const warehouseList = [...warehouseMap.values()]
+
+	for (const record of records || []) {
+		const dispatchData = getWarehouseDispatchData(record)
+		const receivedAt = String(dispatchData?.receivedAt || '').trim()
+		const warehouse =
+			warehouseMap.get(String(dispatchData?.warehouseId || '').trim()) ||
+			warehouseList.find(
+				item =>
+					normalizeWarehouseIdentity(item?.name) ===
+					normalizeWarehouseIdentity(dispatchData?.warehouseName),
+			)
+
+		if (!warehouse || !receivedAt) {
+			continue
+		}
+
+		const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+		const items = normalizePurchaseItems(
+			dispatchData?.itemsSnapshot || buyerOrderData?.items || record?.items,
+		)
+		const supplierName = String(
+			dispatchData?.supplierName || buyerOrderData?.supplierName || '',
+		).trim()
+
+		if (items.length) {
+			warehouse.requestCount += 1
+		}
+
+		if (getDateTimestamp(receivedAt) > getDateTimestamp(warehouse.updatedAt)) {
+			warehouse.updatedAt = receivedAt
+		}
+
+		for (const item of items) {
+			const quantity = Math.max(1, Number(item?.quantity || 1))
+			warehouse.totalQuantity += quantity
+			warehouse.itemCount += 1
+			warehouse.items.push({
+				productName: String(item?.productName || '').trim(),
+				features: String(item?.features || '').trim(),
+				unit: String(item?.unit || ITEM_UNITS[0] || 'dona').trim(),
+				quantity,
+				requestId: String(record?._id || '').trim(),
+				requestNumber: String(record?.requestNumber || '').trim(),
+				supplierName,
+				receivedAt,
+			})
+		}
+	}
+
+	return (warehouses || []).map(warehouse => {
+		const currentWarehouse = warehouseMap.get(warehouse.id)
+
+		return {
+			...currentWarehouse,
+			items: [...(currentWarehouse?.items || [])].sort(
+				(firstItem, secondItem) =>
+					getDateTimestamp(secondItem?.receivedAt) -
+					getDateTimestamp(firstItem?.receivedAt),
+			),
+		}
+	})
 }
 
 const buildApprovalSummary = ({ selectedUserIds, structureApprovals }) => {
@@ -848,6 +1105,19 @@ const canViewBuyerWorkspace = ({ currentAdmin }) =>
 const canEditBuyerWorkspace = ({ currentAdmin }) =>
 	['admin', 'sotib_oluvchi'].includes(currentAdmin?.role)
 
+const canViewDispatchWorkspace = context => canViewBuyerWorkspace(context)
+const canEditDispatchWorkspace = context => canEditBuyerWorkspace(context)
+const canViewReceiveWorkspace = ({ currentAdmin }) =>
+	['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)
+const canEditReceiveWorkspace = ({ currentAdmin }) =>
+	['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)
+const canViewWarehouseSection = ({ currentAdmin }) =>
+	['admin', 'monitoring', 'sotib_oluvchi', WAREHOUSE_ROLE].includes(
+		currentAdmin?.role,
+	)
+const canViewMyWarehouse = ({ currentAdmin }) =>
+	['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)
+
 const canAccessBuyerSection = context => canViewBuyerWorkspace(context)
 
 const canProcessBuyerRequest = ({ currentAdmin, record }) => {
@@ -879,6 +1149,51 @@ const canOpenBuyerOrderPage = ({ currentAdmin, record }) => {
 		String(record.param('currentStage') || '') === 'sotib_olish' &&
 		String(buyerOrderData?.workflowState || 'ready') !== 'submitted'
 	)
+}
+
+const canOpenDispatchPage = ({ currentAdmin, record }) => {
+	if (!record || !['admin', 'sotib_oluvchi'].includes(currentAdmin?.role)) {
+		return false
+	}
+
+	const buyerOrderData = parseJsonObject(record.param('buyerOrderData'))
+	const warehouseDispatchData = parseJsonObject(
+		record.param('warehouseDispatchData'),
+	)
+
+	return (
+		['sotib olinmoqda', 'tasdiqlandi', 'tasdiqlangan'].includes(
+			String(record.param('status') || ''),
+		) &&
+		['sotib_olish', 'yakunlandi'].includes(
+			String(record.param('currentStage') || ''),
+		) &&
+		(String(buyerOrderData?.workflowState || '').trim() === 'submitted' ||
+			Boolean(String(warehouseDispatchData?.dispatchedAt || '').trim()))
+	)
+}
+
+const canOpenReceivePage = ({ currentAdmin, record }) => {
+	if (!record || !['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)) {
+		return false
+	}
+
+	const warehouseDispatchData = parseJsonObject(
+		record.param('warehouseDispatchData'),
+	)
+
+	if (!String(warehouseDispatchData?.dispatchedAt || '').trim()) {
+		return false
+	}
+
+	if (currentAdmin?.role === WAREHOUSE_ROLE) {
+		return (
+			String(warehouseDispatchData?.warehouseId || '').trim() ===
+			String(currentAdmin?.id || '').trim()
+		)
+	}
+
+	return true
 }
 
 const canReturnBuyerOrder = ({ currentAdmin, record }) => {
@@ -1071,10 +1386,21 @@ const handleBuyerWorkspace = async (request, _response, context) => {
 		const existingBuyerOrderData = parseJsonObject(
 			purchaseRequest?.buyerOrderData,
 		)
+		const existingWarehouseDispatchData = parseJsonObject(
+			purchaseRequest?.warehouseDispatchData,
+		)
 
 		if (!purchaseRequest) {
 			throw new ValidationError({
 				requestId: { message: 'Tanlangan ariza topilmadi' },
+			})
+		}
+
+		if (String(existingWarehouseDispatchData?.dispatchedAt || '').trim()) {
+			throw new ValidationError({
+				requestId: {
+					message: 'Bu buyurtma omborga jo‘natilgan, endi faqat ko‘rish mumkin',
+				},
 			})
 		}
 
@@ -1170,8 +1496,10 @@ const handleBuyerWorkspace = async (request, _response, context) => {
 	}
 
 	const queueRecords = await PurchaseRequest.find({
-		status: { $in: BUYER_WORKSPACE_STATUSES },
-		currentStage: 'sotib_olish',
+		status: {
+			$in: [...BUYER_WORKSPACE_STATUSES, 'tasdiqlandi', 'tasdiqlangan'],
+		},
+		currentStage: { $in: ['sotib_olish', 'yakunlandi'] },
 	})
 		.sort({ updatedAt: -1, createdAt: -1 })
 		.lean()
@@ -1181,12 +1509,18 @@ const handleBuyerWorkspace = async (request, _response, context) => {
 	)
 	const orderedRecords = sortBuyerWorkspaceRecords(
 		serializedRecords.filter(
-			record => record?.buyerOrderData?.workflowState === 'submitted',
+			record =>
+				record?.buyerOrderData?.workflowState === 'submitted' ||
+				Boolean(
+					String(record?.warehouseDispatchData?.dispatchedAt || '').trim(),
+				),
 		),
 	)
 	const availableRecords = sortBuyerWorkspaceRecords(
 		serializedRecords.filter(
-			record => record?.buyerOrderData?.workflowState !== 'submitted',
+			record =>
+				record?.buyerOrderData?.workflowState !== 'submitted' &&
+				!String(record?.warehouseDispatchData?.dispatchedAt || '').trim(),
 		),
 	)
 
@@ -1374,6 +1708,16 @@ const handleOpenBuyerOrderPage = async (_request, _response, context) => ({
 	redirectUrl: `/admin/resources/PurchaseOrderWorkspace?recordId=${getRecordId(context.record)}`,
 })
 
+const handleOpenDispatchPage = async (_request, _response, context) => ({
+	record: context.record?.toJSON(context.currentAdmin),
+	redirectUrl: `/admin/resources/PurchaseDispatchWorkspace?recordId=${getRecordId(context.record)}`,
+})
+
+const handleOpenReceivePage = async (_request, _response, context) => ({
+	record: context.record?.toJSON(context.currentAdmin),
+	redirectUrl: `/admin/resources/PurchaseReceiveWorkspace?recordId=${getRecordId(context.record)}`,
+})
+
 const handleOpenBuyerWorkspacePage = async (_request, _response, context) => ({
 	records: [],
 	redirectUrl: '/admin/resources/PurchaseOrderWorkspace',
@@ -1392,6 +1736,314 @@ const handleRefreshBuyerWorkspacePage = async () => ({
 	records: [],
 	redirectUrl: '/admin/resources/PurchaseOrderWorkspace',
 })
+
+const handleDispatchWorkspace = async (request, _response, context) => {
+	const { currentAdmin } = context
+	const canView = canViewDispatchWorkspace(context)
+	const canEdit = canEditDispatchWorkspace(context)
+	const requestMethod = String(request?.method || 'get').toLowerCase()
+	const warehouses = await loadWarehouseStructures()
+
+	if (!canView) {
+		return {
+			canEdit: false,
+			currentRole: currentAdmin?.role || '',
+			warehouses,
+			records: [],
+			sentRecords: [],
+			notice: {
+				message: 'Bu bo‘lim sizning rolingiz uchun yopiq',
+				type: 'error',
+			},
+		}
+	}
+
+	if (requestMethod === 'post') {
+		if (!canEdit) {
+			throw new ValidationError({
+				requestId: {
+					message:
+						'Faqat sotib oluvchi yoki admin buyurtmani omborga jo‘nata oladi',
+				},
+			})
+		}
+
+		const requestId = String(request.payload?.requestId || '').trim()
+		const warehouseId = String(request.payload?.warehouseId || '').trim()
+		const warehouse = getWarehouseOption(warehouseId, warehouses)
+
+		if (!requestId || !warehouse) {
+			throw new ValidationError({
+				requestId: !requestId
+					? { message: 'Buyurtma arizasini tanlang' }
+					: undefined,
+				warehouseId: !warehouse
+					? {
+							message:
+								'Tarkibiy tuzilma nomidan qaysi omborga jo‘natilishini tanlang',
+						}
+					: undefined,
+			})
+		}
+
+		const purchaseRequest = await PurchaseRequest.findById(requestId)
+
+		if (!purchaseRequest) {
+			throw new ValidationError({
+				requestId: { message: 'Tanlangan buyurtma topilmadi' },
+			})
+		}
+
+		if (!isDispatchReadyRecord(purchaseRequest)) {
+			throw new ValidationError({
+				requestId: {
+					message: 'Bu buyurtma hali omborga jo‘natishga tayyor emas',
+				},
+			})
+		}
+
+		const buyerOrderData = parseJsonObject(purchaseRequest.buyerOrderData)
+		const itemsSnapshot = normalizePurchaseItems(
+			buyerOrderData.items || purchaseRequest.items,
+		)
+		const now = new Date().toISOString()
+		const history = parseJsonArray(purchaseRequest.approvalHistory)
+
+		purchaseRequest.warehouseDispatchData = JSON.stringify({
+			warehouseId: warehouse.id,
+			warehouseName: warehouse.name,
+			warehouseDescription: warehouse.description,
+			dispatchedAt: now,
+			dispatchedBy: buildActorLabel(currentAdmin),
+			dispatchedByRole: currentAdmin?.role || '',
+			receivedAt: '',
+			receivedBy: '',
+			receivedByRole: '',
+			supplierName: String(buyerOrderData?.supplierName || '').trim(),
+			itemsSnapshot,
+		})
+		purchaseRequest.warehouseDispatchSummary = `${warehouse.name} • ${itemsSnapshot.length} ta tovar • qabul kutilmoqda`
+		purchaseRequest.status = 'tasdiqlandi'
+		purchaseRequest.currentStage = 'yakunlandi'
+		purchaseRequest.lastComment = `${warehouse.name} tarkibiy tuzilma omboriga jo‘natildi. Qabul qilinishi kutilmoqda`
+		purchaseRequest.approvalHistory = JSON.stringify(
+			[
+				...history,
+				{
+					userId: String(currentAdmin?.id || ''),
+					userName: buildActorLabel(currentAdmin),
+					role: currentAdmin?.role || '',
+					stage: 'yakunlandi',
+					decision: 'omborga jo‘natildi',
+					comment: `${warehouse.name} tarkibiy tuzilma omboriga jo‘natildi. Qabul qilinishi kutilmoqda`,
+					decidedAt: now,
+				},
+			].slice(-60),
+		)
+
+		await purchaseRequest.save()
+	}
+
+	const workspaceRecords = await PurchaseRequest.find({
+		status: { $in: ['sotib olinmoqda', 'tasdiqlandi', 'tasdiqlangan'] },
+		currentStage: { $in: ['sotib_olish', 'yakunlandi'] },
+	})
+		.sort({ updatedAt: -1, createdAt: -1 })
+		.lean()
+
+	const serializedRecords = sortDispatchWorkspaceRecords(
+		workspaceRecords.map(serializeDispatchWorkspaceRecord),
+	)
+
+	return {
+		canEdit,
+		currentRole: currentAdmin?.role || '',
+		warehouses,
+		records: serializedRecords.filter(record => isDispatchReadyRecord(record)),
+		sentRecords: serializedRecords.filter(record =>
+			String(record?.warehouseDispatchData?.dispatchedAt || '').trim(),
+		),
+		notice:
+			requestMethod === 'post'
+				? {
+						message:
+							'Buyurtma tanlangan tuzilma omboriga jo‘natildi. Endi tuzilma uni qabul qiladi',
+						type: 'success',
+					}
+				: undefined,
+	}
+}
+
+const handleReceiveWorkspace = async (request, _response, context) => {
+	const { currentAdmin } = context
+	const canView = canViewReceiveWorkspace(context)
+	const canEdit = canEditReceiveWorkspace(context)
+	const requestMethod = String(request?.method || 'get').toLowerCase()
+
+	if (!canView) {
+		return {
+			canEdit: false,
+			currentRole: currentAdmin?.role || '',
+			records: [],
+			receivedRecords: [],
+			notice: {
+				message: 'Bu bo‘lim sizning rolingiz uchun yopiq',
+				type: 'error',
+			},
+		}
+	}
+
+	if (requestMethod === 'post') {
+		if (!canEdit) {
+			throw new ValidationError({
+				requestId: {
+					message:
+						'Faqat admin yoki tuzilma foydalanuvchisi buyurtmani qabul qila oladi',
+				},
+			})
+		}
+
+		const requestId = String(request.payload?.requestId || '').trim()
+
+		if (!requestId) {
+			throw new ValidationError({
+				requestId: { message: 'Qabul qilinadigan buyurtmani tanlang' },
+			})
+		}
+
+		const purchaseRequest = await PurchaseRequest.findById(requestId)
+
+		if (!purchaseRequest) {
+			throw new ValidationError({
+				requestId: { message: 'Tanlangan buyurtma topilmadi' },
+			})
+		}
+
+		const dispatchData = getWarehouseDispatchData(purchaseRequest)
+
+		if (!String(dispatchData?.dispatchedAt || '').trim()) {
+			throw new ValidationError({
+				requestId: {
+					message: 'Bu buyurtma hali tuzilma omboriga jo‘natilmagan',
+				},
+			})
+		}
+
+		if (String(dispatchData?.receivedAt || '').trim()) {
+			throw new ValidationError({
+				requestId: {
+					message: 'Bu buyurtma allaqachon omborga qabul qilingan',
+				},
+			})
+		}
+
+		if (!matchesWarehouseReceiver({ record: purchaseRequest, currentAdmin })) {
+			throw new ValidationError({
+				requestId: {
+					message: 'Bu buyurtma boshqa tuzilma omboriga biriktirilgan',
+				},
+			})
+		}
+
+		const itemsSnapshot = normalizePurchaseItems(dispatchData?.itemsSnapshot)
+		const now = new Date().toISOString()
+		const history = parseJsonArray(purchaseRequest.approvalHistory)
+		const warehouseName = String(dispatchData?.warehouseName || 'Ombor').trim()
+
+		purchaseRequest.warehouseDispatchData = JSON.stringify({
+			...dispatchData,
+			receivedAt: now,
+			receivedBy: buildActorLabel(currentAdmin),
+			receivedByRole: currentAdmin?.role || '',
+			itemsSnapshot,
+		})
+		purchaseRequest.warehouseDispatchSummary = `${warehouseName} • ${itemsSnapshot.length} ta tovar • qabul qilindi`
+		purchaseRequest.lastComment = `${warehouseName} omboriga qabul qilindi`
+		purchaseRequest.approvalHistory = JSON.stringify(
+			[
+				...history,
+				{
+					userId: String(currentAdmin?.id || ''),
+					userName: buildActorLabel(currentAdmin),
+					role: currentAdmin?.role || '',
+					stage: 'yakunlandi',
+					decision: 'omborga qabul qilindi',
+					comment: `${warehouseName} omboriga qabul qilindi`,
+					decidedAt: now,
+				},
+			].slice(-60),
+		)
+
+		await purchaseRequest.save()
+	}
+
+	const workspaceRecords = await PurchaseRequest.find({
+		status: { $in: ['sotib olinmoqda', 'tasdiqlandi', 'tasdiqlangan'] },
+		currentStage: { $in: ['yakunlandi'] },
+	})
+		.sort({ updatedAt: -1, createdAt: -1 })
+		.lean()
+
+	const serializedRecords = sortDispatchWorkspaceRecords(
+		workspaceRecords.map(serializeDispatchWorkspaceRecord),
+	)
+	const visibleRecords = serializedRecords.filter(record =>
+		matchesWarehouseReceiver({ record, currentAdmin }),
+	)
+
+	return {
+		canEdit,
+		currentRole: currentAdmin?.role || '',
+		records: visibleRecords.filter(
+			record => hasWarehouseDispatch(record) && !hasWarehouseReceipt(record),
+		),
+		receivedRecords: visibleRecords.filter(record =>
+			hasWarehouseReceipt(record),
+		),
+		notice:
+			requestMethod === 'post'
+				? {
+						message:
+							'Buyurtma tuzilma omboriga qabul qilindi va ombor qoldig‘iga qo‘shildi',
+						type: 'success',
+					}
+				: undefined,
+	}
+}
+
+const handleWarehouseOverview = async (_request, _response, context) => {
+	const { currentAdmin } = context
+
+	if (!canViewWarehouseSection(context)) {
+		return {
+			currentRole: currentAdmin?.role || '',
+			warehouses: [],
+			notice: {
+				message: 'Bu bo‘lim sizning rolingiz uchun yopiq',
+				type: 'error',
+			},
+		}
+	}
+
+	const warehouses = await loadWarehouseStructures()
+	const visibleWarehouses =
+		currentAdmin?.role === WAREHOUSE_ROLE
+			? [buildWarehouseOption(currentAdmin)]
+			: warehouses
+	const dispatchedRecords = await PurchaseRequest.find({
+		currentStage: 'yakunlandi',
+	})
+		.sort({ updatedAt: -1, createdAt: -1 })
+		.lean()
+
+	return {
+		currentRole: currentAdmin?.role || '',
+		warehouses: buildWarehouseOverviewData(
+			dispatchedRecords,
+			visibleWarehouses,
+		),
+	}
+}
 
 const handleReturnBuyerOrder = async (request, _response, context) => {
 	const { currentAdmin, record, resource } = context
@@ -2152,6 +2804,24 @@ async function startServer() {
 							isVisible: context => canOpenBuyerOrderPage(context),
 							handler: handleOpenBuyerOrderPage,
 						},
+						openDispatchPage: {
+							actionType: 'record',
+							icon: 'Truck',
+							label: 'Buyurtmani jo‘natish',
+							component: false,
+							isAccessible: context => canOpenDispatchPage(context),
+							isVisible: context => canOpenDispatchPage(context),
+							handler: handleOpenDispatchPage,
+						},
+						openReceivePage: {
+							actionType: 'record',
+							icon: 'Package',
+							label: 'Buyurtmani qabul qilish',
+							component: false,
+							isAccessible: context => canOpenReceivePage(context),
+							isVisible: context => canOpenReceivePage(context),
+							handler: handleOpenReceivePage,
+						},
 						returnBuyerOrder: {
 							actionType: 'record',
 							icon: 'Undo2',
@@ -2445,6 +3115,234 @@ async function startServer() {
 							isAccessible: context => canViewBuyerWorkspace(context),
 							isVisible: context => canViewBuyerWorkspace(context),
 							handler: handleRefreshBuyerWorkspacePage,
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
+					id: 'PurchaseDispatchWorkspace',
+					name: 'Buyurtmani jo‘natish',
+					navigation: {
+						name: 'Xarid',
+						icon: 'Truck',
+					},
+					actions: {
+						list: {
+							component: Components.PurchaseDispatchWorkspace,
+							isAccessible: context => canViewDispatchWorkspace(context),
+							isVisible: context => canViewDispatchWorkspace(context),
+						},
+						dispatchWorkspace: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewDispatchWorkspace(context),
+							isVisible: false,
+							handler: handleDispatchWorkspace,
+						},
+						refreshDispatchWorkspace: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewDispatchWorkspace(context),
+							isVisible: context => canViewDispatchWorkspace(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/PurchaseDispatchWorkspace',
+							}),
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
+					id: 'PurchaseReceiveWorkspace',
+					name: 'Buyurtmani qabul qilish',
+					navigation: {
+						name: 'Xarid',
+						icon: 'Package',
+					},
+					actions: {
+						list: {
+							component: Components.PurchaseReceiveWorkspace,
+							isAccessible: context => canViewReceiveWorkspace(context),
+							isVisible: context => canViewReceiveWorkspace(context),
+						},
+						receiveWorkspace: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewReceiveWorkspace(context),
+							isVisible: false,
+							handler: handleReceiveWorkspace,
+						},
+						refreshReceiveWorkspace: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewReceiveWorkspace(context),
+							isVisible: context => canViewReceiveWorkspace(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/PurchaseReceiveWorkspace',
+							}),
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
+					id: 'WarehouseOverview',
+					name: 'Omborlar',
+					navigation: {
+						name: 'Omborxona',
+						icon: 'Archive',
+					},
+					actions: {
+						list: {
+							component: Components.WarehouseOverview,
+							isAccessible: context => canViewWarehouseSection(context),
+							isVisible: context => canViewWarehouseSection(context),
+						},
+						warehouseOverview: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewWarehouseSection(context),
+							isVisible: false,
+							handler: handleWarehouseOverview,
+						},
+						refreshWarehouseOverview: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewWarehouseSection(context),
+							isVisible: context => canViewWarehouseSection(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/WarehouseOverview',
+							}),
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
+					id: 'MyWarehouse',
+					name: 'Mening omborim',
+					navigation: {
+						name: 'Omborxona',
+						icon: 'Archive',
+					},
+					actions: {
+						list: {
+							component: Components.WarehouseOverview,
+							isAccessible: context => canViewMyWarehouse(context),
+							isVisible: context => canViewMyWarehouse(context),
+						},
+						warehouseOverview: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewMyWarehouse(context),
+							isVisible: false,
+							handler: handleWarehouseOverview,
+						},
+						refreshMyWarehouse: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewMyWarehouse(context),
+							isVisible: context => canViewMyWarehouse(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/MyWarehouse',
+							}),
 						},
 						show: {
 							isAccessible: () => false,

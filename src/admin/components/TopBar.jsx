@@ -21,6 +21,7 @@ const TopBar = ({ toggleSidebar }) => {
 			options: { supportedLngs },
 			changeLanguage,
 		},
+		translateButton,
 		translateComponent,
 	} = useTranslation()
 
@@ -38,9 +39,10 @@ const TopBar = ({ toggleSidebar }) => {
 			alignItems='center'
 			justifyContent='space-between'
 			flexWrap='wrap'
-			gap='default'
+			gap='lg'
 			px='lg'
 			py='default'
+			style={{ rowGap: '12px' }}
 		>
 			<Box display='flex' alignItems='center' gap='default'>
 				<Box
@@ -53,7 +55,13 @@ const TopBar = ({ toggleSidebar }) => {
 				</Box>
 			</Box>
 
-			<Box display='flex' alignItems='center' flexWrap='wrap' gap='default'>
+			<Box
+				display='flex'
+				alignItems='center'
+				flexWrap='wrap'
+				gap='xl'
+				style={{ columnGap: '16px', rowGap: '12px' }}
+			>
 				{availableLanguages.length > 1 ? (
 					<DropDown>
 						<DropDownTrigger>
@@ -82,14 +90,23 @@ const TopBar = ({ toggleSidebar }) => {
 					</DropDown>
 				) : null}
 
-				<Button as='a' href={profileLink} variant='outlined'>
+				<Button
+					as='a'
+					href={profileLink}
+					variant='outlined'
+					style={{ minWidth: '148px' }}
+				>
 					<Icon icon='User' mr='sm' />
-					Mening profilim
+					{translateComponent('TopBar.myProfile')}
 				</Button>
-				<Box width='8px' />
-				<Button as='a' href='/admin/logout' variant='outlined'>
+				<Button
+					as='a'
+					href='/admin/logout'
+					variant='outlined'
+					style={{ minWidth: '120px' }}
+				>
 					<Icon icon='LogOut' mr='sm' />
-					Chiqish
+					{translateButton('logout')}
 				</Button>
 			</Box>
 		</Box>
