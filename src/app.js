@@ -262,6 +262,63 @@ const normalizeWarehouseIdentity = value =>
 		.trim()
 		.toLowerCase()
 
+const BARCODE_MODULO_14 = 10n ** 14n
+
+const normalizeBarcode14 = value => {
+	const digits = String(value || '').replace(/\D/g, '')
+	return digits.length === 14 ? digits : ''
+}
+
+const normalizeUnitPrice = value => {
+	const price = Number(value)
+
+	if (!Number.isFinite(price)) {
+		return 0
+	}
+
+	return Math.max(0, Math.round(price * 100) / 100)
+}
+
+const buildUniqueBarcode14 = ({ seed, usedBarcodes }) => {
+	const safeSet = usedBarcodes instanceof Set ? usedBarcodes : new Set()
+	let digits = String(seed || '').replace(/\D/g, '')
+
+	if (!digits) {
+		digits = `${Date.now()}${Math.floor(Math.random() * 1000000)}`
+	}
+
+	const base = digits.slice(-14).padStart(14, '0')
+	let offset = 0n
+	let candidate = base
+
+	while (safeSet.has(candidate)) {
+		offset += 1n
+		candidate = ((BigInt(base) + offset) % BARCODE_MODULO_14)
+			.toString()
+			.padStart(14, '0')
+	}
+
+	safeSet.add(candidate)
+	return candidate
+}
+
+const collectUsedWarehouseBarcodes = records => {
+	const usedBarcodes = new Set()
+
+	for (const record of records || []) {
+		const dispatchData = getWarehouseDispatchData(record)
+		const items = normalizePurchaseItems(dispatchData?.itemsSnapshot)
+
+		for (const item of items) {
+			if (item.barcode) {
+				usedBarcodes.add(item.barcode)
+			}
+		}
+	}
+
+	return usedBarcodes
+}
+
 const buildWarehouseOption = user => ({
 	id: String(user?._id || user?.id || '').trim(),
 	name:
@@ -311,6 +368,10 @@ const normalizePurchaseItems = value =>
 			features: String(item?.features || '').trim(),
 			unit: ITEM_UNITS.includes(item?.unit) ? item.unit : ITEM_UNITS[0],
 			quantity: Math.max(1, Number(item?.quantity || 0)),
+			unitPrice: normalizeUnitPrice(
+				item?.unitPrice ?? item?.price ?? item?.itemPrice ?? item?.cost,
+			),
+			barcode: normalizeBarcode14(item?.barcode),
 		}))
 		.filter(item => item.productName)
 
@@ -656,6 +717,56 @@ const serializeDispatchWorkspaceRecord = record => {
 	}
 }
 
+const getStockOutHistoryEntries = record =>
+	parseJsonArray(record?.stockOutHistoryRecords).map((entry, entryIndex) => ({
+		batchId: String(
+			entry?.batchId || entry?.id || `${record?._id || 'stock'}-${entryIndex}`,
+		).trim(),
+		warehouseId: String(entry?.warehouseId || '').trim(),
+		warehouseName: String(entry?.warehouseName || '').trim(),
+		comment: String(entry?.comment || '').trim(),
+		createdAt: String(entry?.createdAt || '').trim(),
+		createdBy: String(entry?.createdBy || '').trim(),
+		createdByRole: String(entry?.createdByRole || '').trim(),
+		status:
+			String(entry?.status || 'active').trim() === 'reverted'
+				? 'reverted'
+				: 'active',
+		revertedAt: String(entry?.revertedAt || '').trim(),
+		revertedBy: String(entry?.revertedBy || '').trim(),
+		revertedByRole: String(entry?.revertedByRole || '').trim(),
+		revertComment: String(entry?.revertComment || '').trim(),
+		items: parseJsonArray(entry?.items)
+			.map((item, itemIndex) => ({
+				requestId: String(item?.requestId || record?._id || '').trim(),
+				requestNumber: String(
+					item?.requestNumber || record?.requestNumber || '',
+				).trim(),
+				productName: String(item?.productName || '').trim(),
+				features: String(item?.features || '').trim(),
+				unit: String(item?.unit || ITEM_UNITS[0] || 'dona').trim(),
+				quantity: Math.max(0, Number(item?.quantity || 0)),
+				unitPrice: normalizeUnitPrice(item?.unitPrice),
+				barcode: normalizeBarcode14(item?.barcode),
+				sourceItemIndex: Number(item?.sourceItemIndex ?? itemIndex) || 0,
+			}))
+			.filter(item => item.quantity > 0),
+	}))
+
+const getWarehouseItemKey = ({ recordId, item, index = 0 }) => {
+	const barcode = normalizeBarcode14(item?.barcode)
+
+	if (barcode) {
+		return barcode
+	}
+
+	return `${String(recordId || '').trim()}:${Number(index || 0)}:${String(
+		item?.productName || '',
+	)
+		.trim()
+		.toLowerCase()}`
+}
+
 const buildWarehouseOverviewData = (records, warehouses = []) => {
 	const warehouseMap = new Map(
 		(warehouses || []).map(warehouse => [
@@ -665,12 +776,14 @@ const buildWarehouseOverviewData = (records, warehouses = []) => {
 				totalQuantity: 0,
 				itemCount: 0,
 				requestCount: 0,
+				totalValue: 0,
 				updatedAt: '',
 				items: [],
 			},
 		]),
 	)
 	const warehouseList = [...warehouseMap.values()]
+	const usedBarcodes = new Set()
 
 	for (const record of records || []) {
 		const dispatchData = getWarehouseDispatchData(record)
@@ -694,29 +807,93 @@ const buildWarehouseOverviewData = (records, warehouses = []) => {
 		const supplierName = String(
 			dispatchData?.supplierName || buyerOrderData?.supplierName || '',
 		).trim()
-
-		if (items.length) {
-			warehouse.requestCount += 1
-		}
+		const stockOutQuantityMap = new Map()
 
 		if (getDateTimestamp(receivedAt) > getDateTimestamp(warehouse.updatedAt)) {
 			warehouse.updatedAt = receivedAt
 		}
 
-		for (const item of items) {
+		for (const historyEntry of getStockOutHistoryEntries(record)) {
+			const lastMovementAt = historyEntry.revertedAt || historyEntry.createdAt
+
+			if (
+				getDateTimestamp(lastMovementAt) > getDateTimestamp(warehouse.updatedAt)
+			) {
+				warehouse.updatedAt = lastMovementAt
+			}
+
+			if (historyEntry.status === 'reverted') {
+				continue
+			}
+
+			for (const historyItem of historyEntry.items) {
+				const itemKey = getWarehouseItemKey({
+					recordId: String(record?._id || '').trim(),
+					item: historyItem,
+					index: historyItem?.sourceItemIndex || 0,
+				})
+
+				stockOutQuantityMap.set(
+					itemKey,
+					(stockOutQuantityMap.get(itemKey) || 0) +
+						Math.max(0, Number(historyItem?.quantity || 0)),
+				)
+			}
+		}
+
+		let requestHasVisibleItems = false
+
+		for (const [sourceItemIndex, item] of items.entries()) {
 			const quantity = Math.max(1, Number(item?.quantity || 1))
-			warehouse.totalQuantity += quantity
+			const unitPrice = normalizeUnitPrice(item?.unitPrice)
+			const existingBarcode = normalizeBarcode14(item?.barcode)
+			const barcode =
+				existingBarcode && !usedBarcodes.has(existingBarcode)
+					? (usedBarcodes.add(existingBarcode), existingBarcode)
+					: buildUniqueBarcode14({
+							seed: `${record?._id || ''}${record?.requestNumber || ''}${receivedAt}${warehouse.id}${sourceItemIndex}`,
+							usedBarcodes,
+						})
+			const itemKey = getWarehouseItemKey({
+				recordId: String(record?._id || '').trim(),
+				item: { ...item, barcode },
+				index: sourceItemIndex,
+			})
+			const usedQuantity = Math.max(
+				0,
+				Number(stockOutQuantityMap.get(itemKey) || 0),
+			)
+			const remainingQuantity = Math.max(0, quantity - usedQuantity)
+
+			if (!remainingQuantity) {
+				continue
+			}
+
+			const totalPrice = Math.round(remainingQuantity * unitPrice * 100) / 100
+
+			warehouse.totalQuantity += remainingQuantity
 			warehouse.itemCount += 1
+			warehouse.totalValue += totalPrice
 			warehouse.items.push({
 				productName: String(item?.productName || '').trim(),
 				features: String(item?.features || '').trim(),
 				unit: String(item?.unit || ITEM_UNITS[0] || 'dona').trim(),
-				quantity,
+				quantity: remainingQuantity,
+				originalQuantity: quantity,
+				unitPrice,
+				totalPrice,
+				barcode,
+				sourceItemIndex,
 				requestId: String(record?._id || '').trim(),
 				requestNumber: String(record?.requestNumber || '').trim(),
 				supplierName,
 				receivedAt,
 			})
+			requestHasVisibleItems = true
+		}
+
+		if (requestHasVisibleItems) {
+			warehouse.requestCount += 1
 		}
 	}
 
@@ -732,6 +909,184 @@ const buildWarehouseOverviewData = (records, warehouses = []) => {
 			),
 		}
 	})
+}
+
+const buildInventoryMonitoringData = (records, warehouses = []) => {
+	const warehouseMap = new Map(
+		(warehouses || []).map(warehouse => [
+			String(warehouse.id || '').trim(),
+			warehouse,
+		]),
+	)
+	const warehouseList = [...warehouseMap.values()]
+	const groupedStockOuts = new Map()
+	const movements = []
+
+	const resolveWarehouse = dispatchData => {
+		const warehouseId = String(dispatchData?.warehouseId || '').trim()
+		const directWarehouse = warehouseMap.get(warehouseId)
+		const matchedWarehouse =
+			directWarehouse ||
+			warehouseList.find(
+				warehouse =>
+					normalizeWarehouseIdentity(warehouse?.name) ===
+					normalizeWarehouseIdentity(dispatchData?.warehouseName),
+			)
+
+		return {
+			id: matchedWarehouse?.id || warehouseId,
+			name: String(
+				matchedWarehouse?.name || dispatchData?.warehouseName || 'Ombor',
+			).trim(),
+			description: String(
+				matchedWarehouse?.description ||
+					dispatchData?.warehouseDescription ||
+					'',
+			).trim(),
+		}
+	}
+
+	for (const record of records || []) {
+		const dispatchData = getWarehouseDispatchData(record)
+		const receivedAt = String(dispatchData?.receivedAt || '').trim()
+		const warehouse = resolveWarehouse(dispatchData)
+
+		if (!warehouse?.id && !normalizeWarehouseIdentity(warehouse?.name)) {
+			continue
+		}
+
+		if (warehouses?.length) {
+			const isVisibleWarehouse = warehouseList.some(
+				item =>
+					String(item?.id || '').trim() ===
+						String(warehouse?.id || '').trim() ||
+					normalizeWarehouseIdentity(item?.name) ===
+						normalizeWarehouseIdentity(warehouse?.name),
+			)
+
+			if (!isVisibleWarehouse) {
+				continue
+			}
+		}
+
+		const buyerOrderData = parseJsonObject(record?.buyerOrderData)
+		const items = normalizePurchaseItems(
+			dispatchData?.itemsSnapshot || buyerOrderData?.items || record?.items,
+		)
+		const totalQuantity = items.reduce(
+			(sum, item) => sum + Math.max(0, Number(item?.quantity || 0)),
+			0,
+		)
+
+		if (receivedAt && items.length) {
+			movements.push({
+				id: `in-${record?._id || receivedAt}`,
+				batchId: `in-${record?._id || receivedAt}`,
+				type: 'in',
+				icon: '📥',
+				status: 'active',
+				warehouseId: warehouse.id,
+				warehouseName: warehouse.name,
+				warehouseDescription: warehouse.description,
+				comment: `${warehouse.name} omboriga qabul qilindi`,
+				happenedAt: receivedAt,
+				actor: String(dispatchData?.receivedBy || '').trim(),
+				actorRole: String(dispatchData?.receivedByRole || '').trim(),
+				requestNumbers: [String(record?.requestNumber || '').trim()].filter(
+					Boolean,
+				),
+				itemNames: items
+					.map(item => String(item?.productName || '').trim())
+					.filter(Boolean),
+				totalQuantity,
+				details: items,
+			})
+		}
+
+		for (const historyEntry of getStockOutHistoryEntries(record)) {
+			const groupedEntry = groupedStockOuts.get(historyEntry.batchId) || {
+				id: `out-${historyEntry.batchId}`,
+				batchId: historyEntry.batchId,
+				type: 'out',
+				icon: '📤',
+				status: historyEntry.status,
+				warehouseId: historyEntry.warehouseId || warehouse.id,
+				warehouseName: historyEntry.warehouseName || warehouse.name,
+				warehouseDescription: warehouse.description,
+				comment: historyEntry.comment,
+				happenedAt: historyEntry.createdAt,
+				actor: historyEntry.createdBy,
+				actorRole: historyEntry.createdByRole,
+				revertedAt: historyEntry.revertedAt,
+				revertedBy: historyEntry.revertedBy,
+				revertedByRole: historyEntry.revertedByRole,
+				revertComment: historyEntry.revertComment,
+				requestNumbers: new Set(),
+				itemNames: new Set(),
+				totalQuantity: 0,
+				details: [],
+			}
+
+			groupedEntry.status =
+				historyEntry.status === 'reverted' ? 'reverted' : groupedEntry.status
+			groupedEntry.comment = groupedEntry.comment || historyEntry.comment
+			groupedEntry.revertedAt =
+				historyEntry.revertedAt || groupedEntry.revertedAt
+			groupedEntry.revertedBy =
+				historyEntry.revertedBy || groupedEntry.revertedBy
+			groupedEntry.revertedByRole =
+				historyEntry.revertedByRole || groupedEntry.revertedByRole
+			groupedEntry.revertComment =
+				historyEntry.revertComment || groupedEntry.revertComment
+
+			for (const item of historyEntry.items) {
+				groupedEntry.requestNumbers.add(
+					String(item?.requestNumber || record?.requestNumber || '').trim(),
+				)
+				groupedEntry.itemNames.add(String(item?.productName || '').trim())
+				groupedEntry.totalQuantity += Math.max(0, Number(item?.quantity || 0))
+				groupedEntry.details.push(item)
+			}
+
+			groupedStockOuts.set(historyEntry.batchId, groupedEntry)
+		}
+	}
+
+	for (const groupedEntry of groupedStockOuts.values()) {
+		movements.push({
+			...groupedEntry,
+			requestNumbers: [...groupedEntry.requestNumbers].filter(Boolean),
+			itemNames: [...groupedEntry.itemNames].filter(Boolean),
+		})
+
+		if (groupedEntry.status === 'reverted' && groupedEntry.revertedAt) {
+			movements.push({
+				id: `return-${groupedEntry.batchId}`,
+				batchId: groupedEntry.batchId,
+				type: 'return',
+				icon: '↩️',
+				status: 'reverted',
+				warehouseId: groupedEntry.warehouseId,
+				warehouseName: groupedEntry.warehouseName,
+				warehouseDescription: groupedEntry.warehouseDescription,
+				comment:
+					groupedEntry.revertComment || 'Chiqim admin tomonidan bekor qilindi',
+				happenedAt: groupedEntry.revertedAt,
+				actor: groupedEntry.revertedBy,
+				actorRole: groupedEntry.revertedByRole,
+				requestNumbers: [...groupedEntry.requestNumbers].filter(Boolean),
+				itemNames: [...groupedEntry.itemNames].filter(Boolean),
+				totalQuantity: groupedEntry.totalQuantity,
+				details: groupedEntry.details,
+			})
+		}
+	}
+
+	return movements.sort(
+		(firstMovement, secondMovement) =>
+			getDateTimestamp(secondMovement?.happenedAt) -
+			getDateTimestamp(firstMovement?.happenedAt),
+	)
 }
 
 const buildApprovalSummary = ({ selectedUserIds, structureApprovals }) => {
@@ -1117,6 +1472,12 @@ const canViewWarehouseSection = ({ currentAdmin }) =>
 	)
 const canViewMyWarehouse = ({ currentAdmin }) =>
 	['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)
+const canViewStockOutWorkspace = ({ currentAdmin }) =>
+	['admin', WAREHOUSE_ROLE].includes(currentAdmin?.role)
+const canEditStockOutWorkspace = ({ currentAdmin }) =>
+	currentAdmin?.role === WAREHOUSE_ROLE
+const canViewInventoryHistory = ({ currentAdmin }) =>
+	['admin', 'monitoring', WAREHOUSE_ROLE].includes(currentAdmin?.role)
 
 const canAccessBuyerSection = context => canViewBuyerWorkspace(context)
 
@@ -1904,6 +2265,7 @@ const handleReceiveWorkspace = async (request, _response, context) => {
 		}
 
 		const requestId = String(request.payload?.requestId || '').trim()
+		const incomingItems = parseJsonArray(request.payload?.items)
 
 		if (!requestId) {
 			throw new ValidationError({
@@ -1920,6 +2282,15 @@ const handleReceiveWorkspace = async (request, _response, context) => {
 		}
 
 		const dispatchData = getWarehouseDispatchData(purchaseRequest)
+		const dispatchItems = normalizePurchaseItems(dispatchData?.itemsSnapshot)
+
+		if (!dispatchItems.length) {
+			throw new ValidationError({
+				items: {
+					message: 'Qabul qilinadigan tovarlar topilmadi',
+				},
+			})
+		}
 
 		if (!String(dispatchData?.dispatchedAt || '').trim()) {
 			throw new ValidationError({
@@ -1945,10 +2316,68 @@ const handleReceiveWorkspace = async (request, _response, context) => {
 			})
 		}
 
-		const itemsSnapshot = normalizePurchaseItems(dispatchData?.itemsSnapshot)
+		if (incomingItems.length !== dispatchItems.length) {
+			throw new ValidationError({
+				items: {
+					message: 'Har bir tovar uchun qabul qilish narxini to‘liq kiriting',
+				},
+			})
+		}
+
+		const pricedItems = dispatchItems.map((item, index) => ({
+			...item,
+			unitPrice: normalizeUnitPrice(incomingItems[index]?.unitPrice),
+		}))
+
+		if (pricedItems.some(item => item.unitPrice <= 0)) {
+			throw new ValidationError({
+				items: {
+					message:
+						'Qabul qilishdan oldin har bir tovar uchun 0 dan katta narx kiriting',
+				},
+			})
+		}
+
+		const existingBarcodeRecords = await PurchaseRequest.find({
+			_id: { $ne: purchaseRequest._id },
+			currentStage: 'yakunlandi',
+		})
+			.select('warehouseDispatchData')
+			.lean()
+		const usedBarcodes = collectUsedWarehouseBarcodes(existingBarcodeRecords)
+		const itemsSnapshot = pricedItems.map((item, index) => {
+			const existingBarcode = normalizeBarcode14(item?.barcode)
+			const barcode =
+				existingBarcode && !usedBarcodes.has(existingBarcode)
+					? (usedBarcodes.add(existingBarcode), existingBarcode)
+					: buildUniqueBarcode14({
+							seed: `${requestId}${dispatchData?.dispatchedAt || ''}${Date.now()}${index}${item?.productName || ''}`,
+							usedBarcodes,
+						})
+
+			return {
+				...item,
+				barcode,
+			}
+		})
 		const now = new Date().toISOString()
 		const history = parseJsonArray(purchaseRequest.approvalHistory)
 		const warehouseName = String(dispatchData?.warehouseName || 'Ombor').trim()
+		const buyerOrderData = parseJsonObject(purchaseRequest.buyerOrderData)
+		const buyerItems = normalizePurchaseItems(buyerOrderData?.items)
+		const nextBuyerItems =
+			buyerItems.length === itemsSnapshot.length
+				? buyerItems.map((item, index) => ({
+						...item,
+						unitPrice: itemsSnapshot[index]?.unitPrice || 0,
+					}))
+				: itemsSnapshot.map(item => ({
+						productName: item.productName,
+						features: item.features,
+						unit: item.unit,
+						quantity: item.quantity,
+						unitPrice: item.unitPrice,
+					}))
 
 		purchaseRequest.warehouseDispatchData = JSON.stringify({
 			...dispatchData,
@@ -1956,6 +2385,10 @@ const handleReceiveWorkspace = async (request, _response, context) => {
 			receivedBy: buildActorLabel(currentAdmin),
 			receivedByRole: currentAdmin?.role || '',
 			itemsSnapshot,
+		})
+		purchaseRequest.buyerOrderData = JSON.stringify({
+			...buyerOrderData,
+			items: nextBuyerItems,
 		})
 		purchaseRequest.warehouseDispatchSummary = `${warehouseName} • ${itemsSnapshot.length} ta tovar • qabul qilindi`
 		purchaseRequest.lastComment = `${warehouseName} omboriga qabul qilindi`
@@ -2012,7 +2445,7 @@ const handleReceiveWorkspace = async (request, _response, context) => {
 }
 
 const handleWarehouseOverview = async (_request, _response, context) => {
-	const { currentAdmin } = context
+	const { currentAdmin, resource } = context
 
 	if (!canViewWarehouseSection(context)) {
 		return {
@@ -2025,10 +2458,23 @@ const handleWarehouseOverview = async (_request, _response, context) => {
 		}
 	}
 
+	const currentResourceId =
+		typeof resource?.id === 'function'
+			? resource.id()
+			: resource?.id || 'WarehouseOverview'
+	const isMyWarehouseResource = currentResourceId === 'MyWarehouse'
 	const warehouses = await loadWarehouseStructures()
+	const ownWarehouse = buildWarehouseOption(currentAdmin)
+	const otherWarehouses = warehouses.filter(
+		warehouse =>
+			normalizeWarehouseIdentity(warehouse?.id) !==
+			normalizeWarehouseIdentity(ownWarehouse?.id),
+	)
 	const visibleWarehouses =
 		currentAdmin?.role === WAREHOUSE_ROLE
-			? [buildWarehouseOption(currentAdmin)]
+			? isMyWarehouseResource
+				? [ownWarehouse]
+				: [ownWarehouse, ...otherWarehouses]
 			: warehouses
 	const dispatchedRecords = await PurchaseRequest.find({
 		currentStage: 'yakunlandi',
@@ -2042,6 +2488,360 @@ const handleWarehouseOverview = async (_request, _response, context) => {
 			dispatchedRecords,
 			visibleWarehouses,
 		),
+	}
+}
+
+const handleStockOutWorkspace = async (request, _response, context) => {
+	const { currentAdmin } = context
+	const canView = canViewStockOutWorkspace(context)
+	const canEdit = canEditStockOutWorkspace(context)
+	const requestMethod = String(request?.method || 'get').toLowerCase()
+	const warehouses = await loadWarehouseStructures()
+	const ownWarehouse = buildWarehouseOption(currentAdmin)
+	const visibleWarehouses =
+		currentAdmin?.role === WAREHOUSE_ROLE ? [ownWarehouse] : warehouses
+
+	if (!canView) {
+		return {
+			canEdit: false,
+			currentRole: currentAdmin?.role || '',
+			warehouses: [],
+			recentMovements: [],
+			notice: {
+				message: 'Bu bo‘lim sizning rolingiz uchun yopiq',
+				type: 'error',
+			},
+		}
+	}
+
+	if (requestMethod === 'post') {
+		if (!canEdit) {
+			throw new ValidationError({
+				warehouseId: {
+					message: 'Faqat admin yoki ombor foydalanuvchisi chiqim qila oladi',
+				},
+			})
+		}
+
+		const warehouseId = String(
+			request.payload?.warehouseId || ownWarehouse?.id || '',
+		).trim()
+		const warehouse =
+			getWarehouseOption(warehouseId, visibleWarehouses) ||
+			visibleWarehouses.find(
+				item => String(item?.id || '').trim() === warehouseId,
+			)
+		const outgoingItems = parseJsonArray(request.payload?.items)
+			.map(item => ({
+				requestId: String(item?.requestId || '').trim(),
+				requestNumber: String(item?.requestNumber || '').trim(),
+				productName: String(item?.productName || '').trim(),
+				features: String(item?.features || '').trim(),
+				unit: String(item?.unit || ITEM_UNITS[0] || 'dona').trim(),
+				quantity: Math.max(0, Number(item?.quantity || 0)),
+				unitPrice: normalizeUnitPrice(item?.unitPrice),
+				barcode: normalizeBarcode14(item?.barcode),
+				sourceItemIndex: Number(item?.sourceItemIndex || 0),
+			}))
+			.filter(item => item.requestId && item.quantity > 0)
+		const comment = String(request.payload?.comment || '').trim()
+
+		if (!warehouse || !outgoingItems.length || !comment) {
+			throw new ValidationError({
+				warehouseId: !warehouse
+					? { message: 'Chiqim qilinadigan omborni tanlang' }
+					: undefined,
+				items: !outgoingItems.length
+					? { message: 'Kamida bitta tovarni tanlang' }
+					: undefined,
+				comment: !comment
+					? { message: 'Chiqim sababi uchun izoh kiriting' }
+					: undefined,
+			})
+		}
+
+		const finalizedRecords = await PurchaseRequest.find({
+			currentStage: 'yakunlandi',
+		})
+			.sort({ updatedAt: -1, createdAt: -1 })
+			.lean()
+		const warehouseStock = buildWarehouseOverviewData(finalizedRecords, [
+			warehouse,
+		])[0]
+		const availableItemMap = new Map(
+			(warehouseStock?.items || []).map(item => [
+				getWarehouseItemKey({
+					recordId: item?.requestId,
+					item,
+					index: item?.sourceItemIndex || 0,
+				}),
+				item,
+			]),
+		)
+		const requestedTotals = new Map()
+
+		for (const item of outgoingItems) {
+			const itemKey = getWarehouseItemKey({
+				recordId: item?.requestId,
+				item,
+				index: item?.sourceItemIndex || 0,
+			})
+
+			requestedTotals.set(
+				itemKey,
+				(requestedTotals.get(itemKey) || 0) + Number(item?.quantity || 0),
+			)
+		}
+
+		for (const [itemKey, requestedQuantity] of requestedTotals.entries()) {
+			const availableItem = availableItemMap.get(itemKey)
+
+			if (!availableItem) {
+				throw new ValidationError({
+					items: {
+						message: 'Tanlangan tovar omborda topilmadi yoki qoldiq tugagan',
+					},
+				})
+			}
+
+			if (Number(requestedQuantity) > Number(availableItem?.quantity || 0)) {
+				throw new ValidationError({
+					items: {
+						message: `${availableItem?.productName || 'Tovar'} uchun mavjud qoldiq ${availableItem?.quantity || 0} ${availableItem?.unit || 'dona'}`,
+					},
+				})
+			}
+		}
+
+		const batchId = `OUT-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+		const now = new Date().toISOString()
+		const groupedItems = new Map()
+
+		for (const item of outgoingItems) {
+			const existingItems = groupedItems.get(item.requestId) || []
+			groupedItems.set(item.requestId, [...existingItems, item])
+		}
+
+		for (const [requestId, requestItems] of groupedItems.entries()) {
+			const purchaseRequest = await PurchaseRequest.findById(requestId)
+
+			if (!purchaseRequest) {
+				throw new ValidationError({
+					items: { message: 'Tanlangan tovar manbasi topilmadi' },
+				})
+			}
+
+			const dispatchData = getWarehouseDispatchData(purchaseRequest)
+			const sameWarehouse =
+				String(dispatchData?.warehouseId || '').trim() ===
+					String(warehouse?.id || '').trim() ||
+				normalizeWarehouseIdentity(dispatchData?.warehouseName) ===
+					normalizeWarehouseIdentity(warehouse?.name)
+
+			if (!sameWarehouse || !String(dispatchData?.receivedAt || '').trim()) {
+				throw new ValidationError({
+					items: {
+						message: 'Chiqim uchun tanlangan tovar omborda faol qoldiqda emas',
+					},
+				})
+			}
+
+			const existingHistory = getStockOutHistoryEntries(purchaseRequest)
+			const approvalHistory = parseJsonArray(purchaseRequest.approvalHistory)
+
+			purchaseRequest.stockOutHistoryRecords = JSON.stringify(
+				[
+					...existingHistory,
+					{
+						batchId,
+						warehouseId: warehouse.id,
+						warehouseName: warehouse.name,
+						comment,
+						createdAt: now,
+						createdBy: buildActorLabel(currentAdmin),
+						createdByRole: currentAdmin?.role || '',
+						status: 'active',
+						revertedAt: '',
+						revertedBy: '',
+						revertedByRole: '',
+						revertComment: '',
+						items: requestItems,
+					},
+				].slice(-300),
+			)
+			purchaseRequest.lastComment = `${warehouse.name} omboridan chiqim qilindi`
+			purchaseRequest.approvalHistory = JSON.stringify(
+				[
+					...approvalHistory,
+					{
+						userId: String(currentAdmin?.id || ''),
+						userName: buildActorLabel(currentAdmin),
+						role: currentAdmin?.role || '',
+						stage: 'yakunlandi',
+						decision: 'chiqim qilindi',
+						comment: `${warehouse.name} omboridan chiqim qilindi. Izoh: ${comment}`,
+						decidedAt: now,
+					},
+				].slice(-60),
+			)
+
+			await purchaseRequest.save()
+		}
+	}
+
+	const refreshedRecords = await PurchaseRequest.find({
+		currentStage: 'yakunlandi',
+	})
+		.sort({ updatedAt: -1, createdAt: -1 })
+		.lean()
+
+	return {
+		canEdit,
+		currentRole: currentAdmin?.role || '',
+		warehouses: buildWarehouseOverviewData(refreshedRecords, visibleWarehouses),
+		recentMovements: buildInventoryMonitoringData(
+			refreshedRecords,
+			visibleWarehouses,
+		)
+			.filter(movement => movement.type !== 'in')
+			.slice(0, 40),
+		notice:
+			requestMethod === 'post'
+				? {
+						message: 'Chiqim saqlandi va ombor qoldig‘idan ayrildi',
+						type: 'success',
+					}
+				: undefined,
+	}
+}
+
+const handleInventoryHistory = async (request, _response, context) => {
+	const { currentAdmin } = context
+	const canView = canViewInventoryHistory(context)
+	const requestMethod = String(request?.method || 'get').toLowerCase()
+	const warehouses = await loadWarehouseStructures()
+	const ownWarehouse = buildWarehouseOption(currentAdmin)
+	const visibleWarehouses =
+		currentAdmin?.role === WAREHOUSE_ROLE ? [ownWarehouse] : warehouses
+
+	if (!canView) {
+		return {
+			currentRole: currentAdmin?.role || '',
+			canRevert: false,
+			warehouses: [],
+			movements: [],
+			notice: {
+				message: 'Bu bo‘lim sizning rolingiz uchun yopiq',
+				type: 'error',
+			},
+		}
+	}
+
+	if (requestMethod === 'post') {
+		if (currentAdmin?.role !== 'admin') {
+			throw new ValidationError({
+				batchId: {
+					message: 'Faqat admin chiqimni bekor qilib qaytara oladi',
+				},
+			})
+		}
+
+		const batchId = String(request.payload?.batchId || '').trim()
+		const revertComment = String(request.payload?.revertComment || '').trim()
+
+		if (!batchId) {
+			throw new ValidationError({
+				batchId: { message: 'Bekor qilinadigan chiqim topilmadi' },
+			})
+		}
+
+		const purchaseRequests = await PurchaseRequest.find({
+			currentStage: 'yakunlandi',
+		})
+		let revertedCount = 0
+		const now = new Date().toISOString()
+
+		for (const purchaseRequest of purchaseRequests) {
+			const historyEntries = getStockOutHistoryEntries(purchaseRequest)
+			let wasChanged = false
+
+			const nextEntries = historyEntries.map(entry => {
+				if (String(entry?.batchId || '').trim() !== batchId) {
+					return entry
+				}
+
+				if (entry.status === 'reverted') {
+					return entry
+				}
+
+				wasChanged = true
+				return {
+					...entry,
+					status: 'reverted',
+					revertedAt: now,
+					revertedBy: buildActorLabel(currentAdmin),
+					revertedByRole: currentAdmin?.role || '',
+					revertComment,
+				}
+			})
+
+			if (!wasChanged) {
+				continue
+			}
+
+			const approvalHistory = parseJsonArray(purchaseRequest.approvalHistory)
+			purchaseRequest.stockOutHistoryRecords = JSON.stringify(nextEntries)
+			purchaseRequest.lastComment = 'Chiqim admin tomonidan bekor qilindi'
+			purchaseRequest.approvalHistory = JSON.stringify(
+				[
+					...approvalHistory,
+					{
+						userId: String(currentAdmin?.id || ''),
+						userName: buildActorLabel(currentAdmin),
+						role: currentAdmin?.role || '',
+						stage: 'yakunlandi',
+						decision: 'chiqim bekor qilindi',
+						comment: revertComment || 'Chiqim admin tomonidan bekor qilindi',
+						decidedAt: now,
+					},
+				].slice(-60),
+			)
+
+			await purchaseRequest.save()
+			revertedCount += 1
+		}
+
+		if (!revertedCount) {
+			throw new ValidationError({
+				batchId: {
+					message:
+						'Bu chiqim topilmadi yoki avvalroq admin tomonidan qaytarilgan',
+				},
+			})
+		}
+	}
+
+	const finalizedRecords = await PurchaseRequest.find({
+		currentStage: 'yakunlandi',
+	})
+		.sort({ updatedAt: -1, createdAt: -1 })
+		.lean()
+
+	return {
+		currentRole: currentAdmin?.role || '',
+		canRevert: currentAdmin?.role === 'admin',
+		warehouses: visibleWarehouses,
+		movements: buildInventoryMonitoringData(
+			finalizedRecords,
+			visibleWarehouses,
+		),
+		notice:
+			requestMethod === 'post'
+				? {
+						message: 'Chiqim bekor qilindi va qoldiq omborga qaytarildi',
+						type: 'success',
+					}
+				: undefined,
 	}
 }
 
@@ -2135,7 +2935,7 @@ async function startServer() {
 		},
 		pages,
 		branding: {
-			companyName: 'Zaxira.uz',
+			companyName: '',
 			logo: false,
 			favicon: '/favicon.svg',
 			softwareBrothers: false,
@@ -3256,6 +4056,120 @@ async function startServer() {
 			{
 				resource: PurchaseRequest,
 				options: {
+					id: 'ChiqimQilish',
+					name: 'Chiqim qilish',
+					navigation: {
+						name: 'Chiqimlar',
+						icon: 'Send',
+					},
+					actions: {
+						list: {
+							component: Components.ChiqimQilish,
+							isAccessible: context => canViewStockOutWorkspace(context),
+							isVisible: context => canViewStockOutWorkspace(context),
+						},
+						stockOutWorkspace: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewStockOutWorkspace(context),
+							isVisible: false,
+							handler: handleStockOutWorkspace,
+						},
+						refreshStockOutWorkspace: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewStockOutWorkspace(context),
+							isVisible: context => canViewStockOutWorkspace(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/ChiqimQilish',
+							}),
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
+					id: 'InventoryHistory',
+					name: 'Chiqimlar monitoringi',
+					navigation: {
+						name: 'Chiqimlar',
+						icon: 'Send',
+					},
+					actions: {
+						list: {
+							component: Components.InventoryHistory,
+							isAccessible: context => canViewInventoryHistory(context),
+							isVisible: context => canViewInventoryHistory(context),
+						},
+						inventoryHistory: {
+							actionType: 'resource',
+							component: false,
+							isAccessible: context => canViewInventoryHistory(context),
+							isVisible: false,
+							handler: handleInventoryHistory,
+						},
+						refreshInventoryHistory: {
+							actionType: 'resource',
+							label: 'Yangilash',
+							icon: 'RotateCw',
+							component: false,
+							isAccessible: context => canViewInventoryHistory(context),
+							isVisible: context => canViewInventoryHistory(context),
+							handler: async () => ({
+								records: [],
+								redirectUrl: '/admin/resources/InventoryHistory',
+							}),
+						},
+						show: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						new: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						edit: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						delete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+						bulkDelete: {
+							isAccessible: () => false,
+							isVisible: false,
+						},
+					},
+				},
+			},
+			{
+				resource: PurchaseRequest,
+				options: {
 					id: 'WarehouseOverview',
 					name: 'Omborlar',
 					navigation: {
@@ -3715,7 +4629,7 @@ async function startServer() {
       <html lang="uz">
         <head>
           <meta charset="UTF-8" />
-          <title>Zaxira.uz</title>
+          <title>Omborxona tizimi</title>
           <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
           <style>
             body { font-family: Arial, sans-serif; padding: 40px; background: linear-gradient(135deg, #eef4ff, #f8fbff); color: #1f2937; }
@@ -3729,7 +4643,6 @@ async function startServer() {
         </head>
         <body>
           <div class="card">
-            <span class="badge">Zaxira.uz</span>
             <h1>Omborxona nazorati uchun universal dastur</h1>
             <p>Ushbu tizim barcha rollar uchun yagona ish maydoni bo‘lib, ombor jarayonlarini tartibli va qulay boshqarishga xizmat qiladi.</p>
             <p><a href="/admin">Tizimga kirish</a></p>
@@ -3741,7 +4654,7 @@ async function startServer() {
 
             <div class="lang-box">
               <h2>Русский</h2>
-              <p><strong>Zaxira.uz</strong> — универсальная система для контроля склада и удобной работы всех ролей в одном месте.</p>
+              <p>Универсальная система для контроля склада и удобной работы всех ролей в одном месте.</p>
               <p><a href="/admin">Войти в систему</a></p>
             </div>
           </div>

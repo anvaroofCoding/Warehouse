@@ -549,9 +549,6 @@ const PurchaseDispatchWorkspace = () => {
 	return (
 		<Box>
 			<Box bg='white' p='xxl' borderRadius='xl'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<H2>{pageCopy.title}</H2>
 				<Text mt='sm' color='grey60'>
 					{pageCopy.subtitle}

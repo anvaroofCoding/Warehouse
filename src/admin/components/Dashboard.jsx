@@ -24,15 +24,23 @@ const Dashboard = () => {
 			return false
 		}
 
+		if (page.id === 'chiqim-qilish' && currentAdmin?.role !== 'tuzilmalar') {
+			return false
+		}
+
+		if (
+			page.id === 'kirim-chiqim-monitoringi' &&
+			!['admin', 'monitoring', 'tuzilmalar'].includes(currentAdmin?.role)
+		) {
+			return false
+		}
+
 		return true
 	})
 
 	return (
 		<Box variant='grey'>
 			<Box bg='white' p='xxl' borderRadius='xl' boxShadow='card'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<H2>Omborxona nazorati uchun asosiy bo‘limlar</H2>
 				<Text mt='default' mb='lg'>
 					Siz tizimga{' '}

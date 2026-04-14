@@ -117,20 +117,7 @@ const Login = () => {
 				style={cardStyle}
 			>
 				<Box mb='xl'>
-					<Text
-						as='span'
-						color='primary100'
-						fontWeight='bold'
-						p='sm'
-						style={{
-							display: 'inline-flex',
-							borderRadius: '999px',
-							background: '#eff6ff',
-						}}
-					>
-						Zaxira.uz
-					</Text>
-					<H2 mt='lg'>{translateComponent('Login.welcomeHeader')}</H2>
+					<H2>{translateComponent('Login.welcomeHeader')}</H2>
 					<Text mt='default' color='grey100'>
 						{translateComponent('Login.welcomeMessage')}
 					</Text>

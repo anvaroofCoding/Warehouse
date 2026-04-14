@@ -51,9 +51,6 @@ const PurchaseDownloadAction = props => {
 	return (
 		<Box variant='grey'>
 			<Box bg='white' p='xxl' borderRadius='xl' boxShadow='card'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<H2>{text.title}</H2>
 				<Text mt='default' mb='xl' color='grey100'>
 					{text.description}

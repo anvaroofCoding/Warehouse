@@ -7,6 +7,22 @@ const sidebarPages = [
 		shortRu: 'Страница для просмотра и редактирования личных данных.',
 	},
 	{
+		id: 'chiqim-qilish',
+		label: 'Chiqim qilish',
+		icon: 'Send',
+		shortUz: 'Mahsulot chiqimini rasmiylashtirish sahifasi.',
+		shortRu: 'Страница оформления расхода товаров.',
+		resourceLink: '/admin/resources/ChiqimQilish',
+	},
+	{
+		id: 'kirim-chiqim-monitoringi',
+		label: 'Chiqimlar monitoringi',
+		icon: 'Activity',
+		shortUz: 'Chiqimlar va qaytarilgan harakatlar monitoringi.',
+		shortRu: 'Мониторинг расходов и возвращённых движений по складам.',
+		resourceLink: '/admin/resources/InventoryHistory',
+	},
+	{
 		id: 'xarid-uchun-ariza',
 		label: 'Xarid',
 		icon: 'ShoppingCart',
@@ -32,13 +48,6 @@ const sidebarPages = [
 		resourceLink: '/admin/resources/User',
 	},
 	{
-		id: 'chiqim-qilish',
-		label: 'Chiqim qilish',
-		icon: 'Send',
-		shortUz: 'Mahsulot chiqimini rasmiylashtirish sahifasi.',
-		shortRu: 'Страница оформления расхода товаров.',
-	},
-	{
 		id: 'transfer',
 		label: 'Transfer',
 		icon: 'Repeat',
@@ -51,6 +60,7 @@ const sidebarPages = [
 		icon: 'Archive',
 		shortUz: 'Barcha omborlar ro‘yxati uchun bo‘lim.',
 		shortRu: 'Раздел для списка всех складов.',
+		resourceLink: '/admin/resources/WarehouseOverview',
 	},
 	{
 		id: 'mening-omborim',
@@ -87,6 +97,7 @@ const sidebarPages = [
 		icon: 'Truck',
 		shortUz: 'Buyurtmalarni jo‘natish uchun tayyor sahifa.',
 		shortRu: 'Готовая страница для отправки заказов.',
+		resourceLink: '/admin/resources/PurchaseDispatchWorkspace',
 	},
 ]
 
@@ -99,7 +110,9 @@ const customSidebarPages = sidebarPages.filter(
 		page.id !== 'arizalarni-tasdiqlash' &&
 		page.id !== 'buyurtma-qilish' &&
 		page.id !== 'buyurtmani-jonatish' &&
-		page.id !== 'omborlar',
+		page.id !== 'omborlar' &&
+		page.id !== 'chiqim-qilish' &&
+		page.id !== 'kirim-chiqim-monitoringi',
 )
 
 export { customSidebarPages, pageMap, sidebarPages }

@@ -47,6 +47,12 @@ const purchaseReceiveWorkspacePath = fileURLToPath(
 const warehouseOverviewPath = fileURLToPath(
 	new URL('./components/WarehouseOverview.jsx', import.meta.url),
 )
+const chiqimQilishPath = fileURLToPath(
+	new URL('./components/ChiqimQilish.jsx', import.meta.url),
+)
+const inventoryHistoryPath = fileURLToPath(
+	new URL('./components/InventoryHistory.jsx', import.meta.url),
+)
 
 componentLoader.override('Login', loginPath)
 componentLoader.override('SidebarBranding', sidebarBrandingPath)
@@ -97,6 +103,11 @@ const Components = {
 	WarehouseOverview: componentLoader.add(
 		'ZaxiraWarehouseOverview',
 		warehouseOverviewPath,
+	),
+	ChiqimQilish: componentLoader.add('ZaxiraChiqimQilish', chiqimQilishPath),
+	InventoryHistory: componentLoader.add(
+		'ZaxiraInventoryHistory',
+		inventoryHistoryPath,
 	),
 }
 

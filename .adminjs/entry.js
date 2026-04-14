@@ -29,3 +29,7 @@ import ZaxiraPurchaseReceiveWorkspace from '../src/admin/components/PurchaseRece
 AdminJS.UserComponents.ZaxiraPurchaseReceiveWorkspace = ZaxiraPurchaseReceiveWorkspace
 import ZaxiraWarehouseOverview from '../src/admin/components/WarehouseOverview'
 AdminJS.UserComponents.ZaxiraWarehouseOverview = ZaxiraWarehouseOverview
+import ZaxiraChiqimQilish from '../src/admin/components/ChiqimQilish'
+AdminJS.UserComponents.ZaxiraChiqimQilish = ZaxiraChiqimQilish
+import ZaxiraInventoryHistory from '../src/admin/components/InventoryHistory'
+AdminJS.UserComponents.ZaxiraInventoryHistory = ZaxiraInventoryHistory

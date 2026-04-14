@@ -159,6 +159,11 @@ const purchaseRequestSchema = new mongoose.Schema(
 			default: '',
 			trim: true,
 		},
+		stockOutHistoryRecords: {
+			type: String,
+			required: true,
+			default: '[]',
+		},
 		createdBy: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: 'User',
@@ -205,6 +210,10 @@ purchaseRequestSchema.pre('validate', function setDefaultStatus() {
 
 	if (!this.warehouseDispatchData) {
 		this.warehouseDispatchData = '{}'
+	}
+
+	if (!this.stockOutHistoryRecords) {
+		this.stockOutHistoryRecords = '[]'
 	}
 })
 

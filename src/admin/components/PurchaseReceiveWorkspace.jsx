@@ -165,6 +165,9 @@ const PurchaseReceiveWorkspace = () => {
 					alreadyReceived: 'Этот заказ уже принят на склад.',
 					accessDenied: 'Этот раздел закрыт для вашей роли.',
 					filterPlaceholder: 'Поиск по заявке, структуре, источнику или складу',
+					itemPriceLabel: 'Цена за единицу (сум)',
+					priceRequiredMessage:
+						'Для каждого товара введите цену больше 0 перед приёмкой',
 				}
 			: {
 					title: 'Buyurtmani qabul qilish',
@@ -192,6 +195,9 @@ const PurchaseReceiveWorkspace = () => {
 					alreadyReceived: 'Bu buyurtma allaqachon omborga qabul qilingan.',
 					accessDenied: 'Bu bo‘lim sizning rolingiz uchun yopiq.',
 					filterPlaceholder: 'Ariza, tuzilma, manba yoki ombor bo‘yicha filter',
+					itemPriceLabel: 'Birlik narxi (so‘m)',
+					priceRequiredMessage:
+						'Qabul qilishdan oldin har bir tovar uchun 0 dan katta narx kiriting',
 				}
 
 	const [records, setRecords] = useState([])
@@ -205,6 +211,7 @@ const PurchaseReceiveWorkspace = () => {
 	const [historyPage, setHistoryPage] = useState(1)
 	const [readyFilterText, setReadyFilterText] = useState('')
 	const [historyFilterText, setHistoryFilterText] = useState('')
+	const [receiveItems, setReceiveItems] = useState([])
 
 	const canView = ['admin', 'tuzilmalar'].includes(currentAdmin?.role)
 	const canEdit = ['admin', 'tuzilmalar'].includes(currentAdmin?.role)
@@ -218,6 +225,15 @@ const PurchaseReceiveWorkspace = () => {
 		() => allRecords.find(record => record.id === selectedRequestId) || null,
 		[allRecords, selectedRequestId],
 	)
+
+	useEffect(() => {
+		const nextItems = (selectedRecord?.items || []).map(item => ({
+			unitPrice: Number.isFinite(Number(item?.unitPrice))
+				? String(Number(item.unitPrice))
+				: '',
+		}))
+		setReceiveItems(nextItems)
+	}, [selectedRecord])
 
 	const filterRows = (rows, query) => {
 		const normalizedQuery = String(query || '')
@@ -365,6 +381,19 @@ const PurchaseReceiveWorkspace = () => {
 			return
 		}
 
+		const normalizedPrices = receiveItems.map(item => Number(item?.unitPrice))
+		const hasInvalidPrice =
+			normalizedPrices.length !== (selectedRecord?.items || []).length ||
+			normalizedPrices.some(price => !Number.isFinite(price) || price <= 0)
+
+		if (hasInvalidPrice) {
+			addNotice({
+				message: pageCopy.priceRequiredMessage,
+				type: 'error',
+			})
+			return
+		}
+
 		setSaving(true)
 
 		try {
@@ -376,6 +405,7 @@ const PurchaseReceiveWorkspace = () => {
 				},
 				data: {
 					requestId: selectedRequestId,
+					items: normalizedPrices.map(unitPrice => ({ unitPrice })),
 				},
 			})
 
@@ -491,9 +521,6 @@ const PurchaseReceiveWorkspace = () => {
 	return (
 		<Box>
 			<Box bg='white' p='xxl' borderRadius='xl'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<H2>{pageCopy.title}</H2>
 				<Text mt='sm' color='grey60'>
 					{pageCopy.subtitle}
@@ -721,6 +748,29 @@ const PurchaseReceiveWorkspace = () => {
 															<input
 																readOnly
 																value={String(item.quantity || 0)}
+																style={inputStyle}
+															/>
+															<input
+																type='number'
+																min='1'
+																step='100'
+																placeholder={pageCopy.itemPriceLabel}
+																readOnly={Boolean(
+																	selectedRecord?.warehouseDispatchData
+																		?.receivedAt,
+																)}
+																value={receiveItems[index]?.unitPrice || ''}
+																onChange={event => {
+																	const value = event.target.value
+																	setReceiveItems(current => {
+																		const nextItems = [...current]
+																		nextItems[index] = {
+																			...nextItems[index],
+																			unitPrice: value,
+																		}
+																		return nextItems
+																	})
+																}}
 																style={inputStyle}
 															/>
 														</Box>

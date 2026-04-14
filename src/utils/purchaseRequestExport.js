@@ -88,7 +88,7 @@ const textByLanguage = (lang = 'uz') =>
 				preparedBy: 'Подготовил',
 				agreedBy: 'Согласование',
 				signatureLine: 'Подпись',
-				footer: 'Документ сформирован автоматически через Zaxira.uz',
+				footer: 'Документ сформирован автоматически через систему',
 				intro: approverName =>
 					`В адрес ${approverName} направляется служебная записка о рассмотрении вопроса закупки необходимых материально‑технических средств.`,
 				purpose: comment =>
@@ -116,7 +116,7 @@ const textByLanguage = (lang = 'uz') =>
 				preparedBy: 'Tayyorladi',
 				agreedBy: 'Kelishildi',
 				signatureLine: 'Imzo',
-				footer: 'Hujjat Zaxira.uz tizimi orqali avtomatik shakllantirildi',
+				footer: 'Hujjat tizim orqali avtomatik shakllantirildi',
 				intro: approverName =>
 					`${approverName} nomiga korxona ehtiyojlari uchun zarur bo‘lgan moddiy‑texnik vositalarni xarid qilish masalasini ko‘rib chiqish yuzasidan ushbu bildirg‘i taqdim etiladi.`,
 				purpose: comment =>

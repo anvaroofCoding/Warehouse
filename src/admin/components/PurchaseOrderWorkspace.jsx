@@ -315,6 +315,7 @@ const PurchaseOrderWorkspace = () => {
 				features: String(item?.features || '').trim(),
 				unit: String(item?.unit || availableUnits[0] || 'dona').trim(),
 				quantity: Math.max(1, Number(item?.quantity || 1)),
+				unitPrice: Math.max(0, Number(item?.unitPrice || 0)),
 			}),
 		)
 
@@ -478,7 +479,11 @@ const PurchaseOrderWorkspace = () => {
 					? {
 							...item,
 							[field]:
-								field === 'quantity' ? Math.max(1, Number(value || 1)) : value,
+								field === 'quantity'
+									? Math.max(1, Number(value || 1))
+									: field === 'unitPrice'
+										? Math.max(0, Number(value || 0))
+										: value,
 						}
 					: item,
 			),
@@ -799,9 +804,6 @@ const PurchaseOrderWorkspace = () => {
 	return (
 		<Box>
 			<Box bg='white' p='xxl' borderRadius='xl'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<H2>Buyurtma qilish</H2>
 				<Text mt='sm' color='grey60'>
 					Jadval qatorini bossangiz, tanlangan ariza uchun buyurtma ish oynasi
@@ -1067,6 +1069,23 @@ const PurchaseOrderWorkspace = () => {
 																	style={inputStyle}
 																	disabled={!canEditSelectedRecord}
 																	placeholder='Soni'
+																/>
+
+																<input
+																	type='number'
+																	min='0'
+																	step='100'
+																	value={item.unitPrice ?? 0}
+																	onChange={event =>
+																		updateItem(
+																			index,
+																			'unitPrice',
+																			event.target.value,
+																		)
+																	}
+																	style={inputStyle}
+																	disabled={!canEditSelectedRecord}
+																	placeholder='Dona narxi (UZS)'
 																/>
 															</Box>
 														</Box>

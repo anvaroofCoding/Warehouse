@@ -4,7 +4,7 @@ const uzTranslations = {
 		edit: 'Tahrirlash',
 		show: 'Ko‘rish',
 		delete: 'O‘chirish',
-		list: 'Ro‘yxat',
+		list: '',
 		search: 'Qidirish',
 		bulkDelete: 'Tanlanganlarni o‘chirish',
 		downloadPdf: 'PDF yuklab olish',
@@ -13,11 +13,15 @@ const uzTranslations = {
 		markBuyerSeen: 'Ko‘rdim, sotib olishga o‘tkazish',
 		openBuyerWorkspacePage: 'Buyurtma qilish',
 		openOrderPage: 'Buyurtma qilish',
+		openDispatchPage: 'Buyurtmani jo‘natish',
+		openReceivePage: 'Buyurtmani qabul qilish',
 		backToBuyerQueue: 'Sotib olish ro‘yxati',
 		refreshBuyerWorkspace: 'Yangilash',
 		refreshDispatchWorkspace: 'Jo‘natish sahifasini yangilash',
 		refreshReceiveWorkspace: 'Qabul sahifasini yangilash',
 		refreshWarehouseOverview: 'Omborlarni yangilash',
+		refreshStockOutWorkspace: 'Chiqim sahifasini yangilash',
+		refreshInventoryHistory: 'Monitoring sahifasini yangilash',
 		returnBuyerOrder: 'Qaytarish',
 	},
 	buttons: {
@@ -37,7 +41,7 @@ const uzTranslations = {
 		contactUs: 'Bog‘lanish',
 	},
 	labels: {
-		navigation: 'Zaxira.uz',
+		navigation: '',
 		pages: 'Sahifalar',
 		selectedRecords: 'Tanlangan yozuvlar',
 		filters: 'Filtrlar',
@@ -58,6 +62,8 @@ const uzTranslations = {
 		PurchaseReceiveWorkspace: 'Buyurtmani qabul qilish',
 		WarehouseOverview: 'Omborlar',
 		MyWarehouse: 'Mening omborim',
+		ChiqimQilish: 'Chiqim qilish',
+		InventoryHistory: 'Chiqimlar monitoringi',
 		User: 'Foydalanuvchilar',
 	},
 	properties: {
@@ -182,7 +188,7 @@ const uzTranslations = {
 			myProfile: 'Mening profilim',
 		},
 		Login: {
-			welcomeHeader: 'Zaxira.uz tizimiga xush kelibsiz',
+			welcomeHeader: 'Tizimga xush kelibsiz',
 			welcomeMessage:
 				'Omborxona nazoratini qulay boshqarish uchun login va parolingizni kiriting.',
 			secureTitle: 'Himoyalangan kirish',
@@ -213,7 +219,7 @@ const ruTranslations = {
 		edit: 'Редактировать',
 		show: 'Просмотр',
 		delete: 'Удалить',
-		list: 'Список',
+		list: '',
 		search: 'Поиск',
 		bulkDelete: 'Удалить выбранное',
 		downloadPdf: 'Скачать PDF',
@@ -222,11 +228,15 @@ const ruTranslations = {
 		markBuyerSeen: 'Ознакомился, передать в процесс закупки',
 		openBuyerWorkspacePage: 'Оформление заказа',
 		openOrderPage: 'Оформление заказа',
+		openDispatchPage: 'Отправка заказа',
+		openReceivePage: 'Приём заказа',
 		backToBuyerQueue: 'Список закупок',
 		refreshBuyerWorkspace: 'Обновить',
 		refreshDispatchWorkspace: 'Обновить страницу отправки',
 		refreshReceiveWorkspace: 'Обновить страницу приёма',
 		refreshWarehouseOverview: 'Обновить склады',
+		refreshStockOutWorkspace: 'Обновить страницу расхода',
+		refreshInventoryHistory: 'Обновить страницу мониторинга',
 		returnBuyerOrder: 'Вернуть',
 	},
 	buttons: {
@@ -246,7 +256,7 @@ const ruTranslations = {
 		contactUs: 'Связаться',
 	},
 	labels: {
-		navigation: 'Zaxira.uz',
+		navigation: '',
 		pages: 'Страницы',
 		selectedRecords: 'Выбранные записи',
 		filters: 'Фильтры',
@@ -267,6 +277,8 @@ const ruTranslations = {
 		PurchaseReceiveWorkspace: 'Приём заказа',
 		WarehouseOverview: 'Склады',
 		MyWarehouse: 'Мой склад',
+		ChiqimQilish: 'Расход товаров',
+		InventoryHistory: 'Мониторинг расходов',
 		User: 'Пользователи',
 	},
 	properties: {
@@ -392,7 +404,7 @@ const ruTranslations = {
 			myProfile: 'Мой профиль',
 		},
 		Login: {
-			welcomeHeader: 'Добро пожаловать в Zaxira.uz',
+			welcomeHeader: 'Добро пожаловать',
 			welcomeMessage:
 				'Введите ваш логин и пароль для удобного управления складским контролем.',
 			secureTitle: 'Защищённый вход',

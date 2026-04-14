@@ -676,10 +676,24 @@ describe('Sotib olish oqimi', () => {
 	})
 
 	test("26 — Tuzilma buyurtmani qabul qilgach tovar ombor detailida ko'rinadi", async () => {
+		const receiveWorkspaceRes = await apiGet(
+			'/admin/api/resources/PurchaseReceiveWorkspace/actions/receiveWorkspace',
+			tuzilmaCookie,
+		)
+		assert.equal(receiveWorkspaceRes.status, 200)
+		const selectedRecord = receiveWorkspaceRes.body?.records?.find(
+			record => record.id === buyerReadyRequestId,
+		)
+		assert.ok(selectedRecord)
+		const receiveItems = (selectedRecord?.items || []).map(item => ({
+			unitPrice: item?.unitPrice > 0 ? item.unitPrice : 1000,
+		}))
+
 		const receiveRes = await apiPost(
 			'/admin/api/resources/PurchaseReceiveWorkspace/actions/receiveWorkspace',
 			{
 				requestId: buyerReadyRequestId,
+				items: receiveItems,
 			},
 			tuzilmaCookie,
 		)

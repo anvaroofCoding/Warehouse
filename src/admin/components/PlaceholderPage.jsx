@@ -23,9 +23,6 @@ const PlaceholderPage = () => {
 		return (
 			<Box variant='grey'>
 				<Box bg='white' p='xxl' borderRadius='xl' boxShadow='card'>
-					<Text color='primary100' fontWeight='bold' mb='default'>
-						Zaxira.uz
-					</Text>
 					<H2>Mening profilim</H2>
 					<Text mt='default' mb='xl'>
 						Siz hozir{' '}
@@ -84,9 +81,6 @@ const PlaceholderPage = () => {
 	return (
 		<Box variant='grey'>
 			<Box bg='white' p='xxl' borderRadius='xl' boxShadow='card'>
-				<Text color='primary100' fontWeight='bold' mb='default'>
-					Zaxira.uz
-				</Text>
 				<Text mb='lg'>
 					Kirish qilingan profil:{' '}
 					<strong>{currentAdmin?.title || currentAdmin?.username}</strong>
