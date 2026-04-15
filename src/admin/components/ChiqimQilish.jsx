@@ -13,21 +13,24 @@ const api = new ApiClient()
 
 const shellStyle = {
 	display: 'grid',
-	gap: '16px',
+	gap: '22px',
 }
 
 const gridStyle = {
 	display: 'grid',
-	gap: '16px',
-	gridTemplateColumns: 'minmax(0, 1.25fr) minmax(300px, 0.75fr)',
+	gap: '22px',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+	alignItems: 'start',
 }
 
 const cardStyle = {
-	padding: '18px',
+	padding: '22px',
 	border: '1px solid #e5e7eb',
 	borderRadius: '16px',
 	background: '#ffffff',
 	boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+	display: 'grid',
+	gap: '14px',
 }
 
 const inputStyle = {
@@ -45,15 +48,15 @@ const inputStyle = {
 const searchBarStyle = {
 	display: 'grid',
 	gridTemplateColumns: 'minmax(0, 1fr) auto',
-	gap: '10px',
+	gap: '12px',
 	alignItems: 'center',
-	marginTop: '8px',
+	marginTop: '12px',
 }
 
 const resultItemStyle = {
 	display: 'grid',
-	gap: '8px',
-	padding: '12px 14px',
+	gap: '12px',
+	padding: '14px 16px',
 	border: '1px solid #e5e7eb',
 	borderRadius: '12px',
 	background: '#ffffff',
@@ -67,12 +70,12 @@ const qtyButtonStyle = {
 }
 
 const selectedCardStyle = {
-	padding: '12px 14px',
+	padding: '14px 16px',
 	borderRadius: '12px',
 	border: '1px solid #e5e7eb',
 	background: '#fbfdff',
 	display: 'grid',
-	gap: '10px',
+	gap: '12px',
 }
 
 const submitButtonStyle = {
@@ -437,7 +440,13 @@ const ChiqimQilish = () => {
 								</Box>
 								{scanText.trim() ? (
 									visibleResults.length ? (
-										<Box style={{ display: 'grid', gap: '10px' }}>
+										<Box
+											style={{
+												display: 'grid',
+												gap: '12px',
+												marginTop: '14px',
+											}}
+										>
 											{visibleResults.map(item => (
 												<Box
 													key={getSelectionKey(item)}
@@ -449,8 +458,9 @@ const ChiqimQilish = () => {
 													<Box
 														display='flex'
 														justifyContent='space-between'
-														gap='lg'
+														gap='xl'
 														alignItems='center'
+														flexWrap='wrap'
 													>
 														<Box>
 															<Text fontWeight='bold'>
@@ -491,13 +501,17 @@ const ChiqimQilish = () => {
 								) : null}
 
 								{selectedItems.length ? (
-									<Box style={{ display: 'grid', gap: '6px' }}>
+									<Box
+										style={{ display: 'grid', gap: '12px', marginTop: '12px' }}
+									>
 										{selectedItems.map(item => (
 											<Box key={item.selectionKey} style={selectedCardStyle}>
 												<Box
 													display='flex'
 													justifyContent='space-between'
-													gap='lg'
+													gap='xl'
+													alignItems='flex-start'
+													flexWrap='wrap'
 												>
 													<Box>
 														<Text fontWeight='bold'>
@@ -523,8 +537,14 @@ const ChiqimQilish = () => {
 													justifyContent='flex-end'
 													gap='default'
 													alignItems='center'
+													flexWrap='wrap'
 												>
-													<Box display='flex' gap='sm' alignItems='center'>
+													<Box
+														display='flex'
+														gap='default'
+														alignItems='center'
+														flexWrap='wrap'
+													>
 														<Button
 															type='button'
 															variant='outlined'

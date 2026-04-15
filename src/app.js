@@ -2935,7 +2935,7 @@ async function startServer() {
 		},
 		pages,
 		branding: {
-			companyName: '',
+			companyName: 'Zaxira.uz',
 			logo: false,
 			favicon: '/favicon.svg',
 			softwareBrothers: false,

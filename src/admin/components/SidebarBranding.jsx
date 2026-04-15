@@ -44,12 +44,11 @@ const SidebarBranding = () => {
 					<Text
 						as='span'
 						display='block'
-						fontWeight='700'
-						fontSize='sm'
+						fontWeight='900'
+						fontSize='xl'
 						color='white'
-						style={{ opacity: 0.9 }}
 					>
-						Omborxona
+						Zaxira.uz
 					</Text>
 				</Box>
 			</Box>

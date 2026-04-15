@@ -243,10 +243,6 @@ const buildBarcodeSvg = value => {
 
 const buildLabelPrintMarkup = ({ item, copies, widthMm, pageCopy }) => {
 	const safeName = escapeHtml(item?.productName || 'Tovar')
-	const safeFeatures = escapeHtml(item?.features || '')
-	const safeQuantity = escapeHtml(
-		`${item?.quantity || 0} ${item?.unit || 'dona'}`,
-	)
 	const safeBarcode = escapeHtml(item?.barcode || '')
 	const barcodeSvg = buildBarcodeSvg(item?.barcode)
 	const labelWidth = clampLabelWidthMm(widthMm)
@@ -257,8 +253,6 @@ const buildLabelPrintMarkup = ({ item, copies, widthMm, pageCopy }) => {
 		return `
 			<div class="label">
 				<div class="name">${safeName}</div>
-				<div class="meta">${safeQuantity}</div>
-				${safeFeatures ? `<div class="meta meta-secondary">${safeFeatures}</div>` : ''}
 				<div class="barcode-wrap">${barcodeSvg}</div>
 				<div class="barcode-text">${safeBarcode}</div>
 			</div>
@@ -301,14 +295,6 @@ const buildLabelPrintMarkup = ({ item, copies, widthMm, pageCopy }) => {
 						line-height: 1.2;
 						word-break: break-word;
 						margin-bottom: 1.2mm;
-					}
-					.meta {
-						font-size: ${Math.max(8, fontSize - 2)}px;
-						line-height: 1.2;
-						color: #334155;
-					}
-					.meta-secondary {
-						margin-top: 0.6mm;
 					}
 					.barcode-wrap {
 						height: ${barcodeHeight}mm;
@@ -628,7 +614,7 @@ const WarehouseOverview = () => {
 		}
 
 		setLabelItem(item)
-		setLabelCopies(String(Math.max(1, Number(item?.quantity || 1))))
+		setLabelCopies('1')
 		setLabelWidthMm(String(clampLabelWidthMm(labelWidthMm)))
 
 		if (typeof window !== 'undefined') {
@@ -842,9 +828,6 @@ const WarehouseOverview = () => {
 													style={{ wordBreak: 'break-word' }}
 												>
 													{labelItem.productName || '—'}
-												</Text>
-												<Text mt='xs' color='grey60'>
-													{`${labelItem.quantity || 0} ${labelItem.unit || 'dona'}`}
 												</Text>
 												<Box
 													mt='sm'

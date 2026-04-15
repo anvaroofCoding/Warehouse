@@ -2,6 +2,7 @@ import {
 	Box,
 	Button,
 	H2,
+	Icon,
 	Label,
 	MessageBox,
 	Text,
@@ -86,6 +87,38 @@ const statCardStyle = {
 	borderRadius: '12px',
 	border: '1px solid #dbe3f0',
 	background: '#f8fafc',
+}
+
+const getTypeMeta = movement => {
+	if (movement?.type === 'in') {
+		return {
+			icon: 'ArrowDownCircle',
+			color: '#15803d',
+			background: '#dcfce7',
+		}
+	}
+
+	if (movement?.type === 'return') {
+		return {
+			icon: 'RotateCcw',
+			color: '#2563eb',
+			background: '#dbeafe',
+		}
+	}
+
+	if (movement?.status === 'reverted') {
+		return {
+			icon: 'RotateCcw',
+			color: '#b45309',
+			background: '#ffedd5',
+		}
+	}
+
+	return {
+		icon: 'ArrowUpCircle',
+		color: '#b91c1c',
+		background: '#fee2e2',
+	}
 }
 
 const formatDate = value => {
@@ -381,22 +414,76 @@ const InventoryHistory = () => {
 						<Box style={cardStyle}>
 							<Box style={statsGridStyle}>
 								<Box style={statCardStyle}>
-									<Text color='grey60'>{pageCopy.summaryIn}</Text>
-									<Text fontWeight='bold' fontSize='xxl'>
-										{stats.incoming}
-									</Text>
+									<Box
+										display='flex'
+										alignItems='center'
+										justifyContent='space-between'
+									>
+										<Box>
+											<Text color='grey60'>{pageCopy.summaryIn}</Text>
+											<Text fontWeight='bold' fontSize='xxl' color='#15803d'>
+												{stats.incoming}
+											</Text>
+										</Box>
+										<Box
+											width='38px'
+											height='38px'
+											display='flex'
+											alignItems='center'
+											justifyContent='center'
+											style={{ borderRadius: '999px', background: '#dcfce7' }}
+										>
+											<Icon icon='ArrowDownCircle' color='#15803d' size={18} />
+										</Box>
+									</Box>
 								</Box>
 								<Box style={statCardStyle}>
-									<Text color='grey60'>{pageCopy.summaryOut}</Text>
-									<Text fontWeight='bold' fontSize='xxl'>
-										{stats.outgoing}
-									</Text>
+									<Box
+										display='flex'
+										alignItems='center'
+										justifyContent='space-between'
+									>
+										<Box>
+											<Text color='grey60'>{pageCopy.summaryOut}</Text>
+											<Text fontWeight='bold' fontSize='xxl' color='#b91c1c'>
+												{stats.outgoing}
+											</Text>
+										</Box>
+										<Box
+											width='38px'
+											height='38px'
+											display='flex'
+											alignItems='center'
+											justifyContent='center'
+											style={{ borderRadius: '999px', background: '#fee2e2' }}
+										>
+											<Icon icon='ArrowUpCircle' color='#b91c1c' size={18} />
+										</Box>
+									</Box>
 								</Box>
 								<Box style={statCardStyle}>
-									<Text color='grey60'>{pageCopy.summaryReturn}</Text>
-									<Text fontWeight='bold' fontSize='xxl'>
-										{stats.returned}
-									</Text>
+									<Box
+										display='flex'
+										alignItems='center'
+										justifyContent='space-between'
+									>
+										<Box>
+											<Text color='grey60'>{pageCopy.summaryReturn}</Text>
+											<Text fontWeight='bold' fontSize='xxl' color='#2563eb'>
+												{stats.returned}
+											</Text>
+										</Box>
+										<Box
+											width='38px'
+											height='38px'
+											display='flex'
+											alignItems='center'
+											justifyContent='center'
+											style={{ borderRadius: '999px', background: '#dbeafe' }}
+										>
+											<Icon icon='RotateCcw' color='#2563eb' size={18} />
+										</Box>
+									</Box>
 								</Box>
 							</Box>
 						</Box>
@@ -481,7 +568,7 @@ const InventoryHistory = () => {
 												style={{
 													background:
 														movement.type === 'return'
-															? '#f0fdf4'
+															? '#eff6ff'
 															: movement.status === 'reverted'
 																? '#fff7ed'
 																: '#ffffff',
@@ -489,9 +576,26 @@ const InventoryHistory = () => {
 											>
 												<td style={tableCellStyle}>{index + 1}</td>
 												<td style={tableCellStyle}>
-													<Text fontWeight='bold'>
-														{movement.icon} {getTypeLabel(movement.type)}
-													</Text>
+													<Box
+														as='span'
+														display='inline-flex'
+														alignItems='center'
+														style={{
+															gap: '8px',
+															padding: '6px 10px',
+															borderRadius: '999px',
+															background: getTypeMeta(movement).background,
+															color: getTypeMeta(movement).color,
+															fontWeight: 700,
+														}}
+													>
+														<Icon
+															icon={getTypeMeta(movement).icon}
+															size={14}
+															color={getTypeMeta(movement).color}
+														/>
+														<span>{getTypeLabel(movement.type)}</span>
+													</Box>
 													<Text mt='xs' color='grey60'>
 														{getStatusLabel(movement)}
 													</Text>
